@@ -157,7 +157,8 @@ services:
     name: namematching
     description: ALA Name Matching Service
     build_tool: maven
-    repository: https://github.com/AtlasOfLivingAustralia/ala-namematching-service
+    repository:
+      https://github.com/AtlasOfLivingAustralia/ala-namematching-service
     artifacts: ala-namematching-server
     log_config_filename: logback.xml
     build_method: repo-branch
@@ -172,7 +173,8 @@ services:
     name: sensitive-data-service
     description: ALA Sensitive Data Service
     build_tool: maven
-    repository: https://github.com/AtlasOfLivingAustralia/ala-sensitive-data-service
+    repository:
+      https://github.com/AtlasOfLivingAustralia/ala-sensitive-data-service
     artifacts: ala-sensitive-data-server
     log_config_filename: logback.xml
     build_method: repo-branch
@@ -186,7 +188,8 @@ services:
     name: data-quality
     description: Data Quality Filter Service
     build_tool: gradle
-    repository: https://github.com/AtlasOfLivingAustralia/data-quality-filter-service
+    repository:
+      https://github.com/AtlasOfLivingAustralia/data-quality-filter-service
     artifacts: data-quality-filter-service
     log_config_filename: logback.xml
   la-pipelines:
