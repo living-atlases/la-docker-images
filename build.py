@@ -779,12 +779,14 @@ def main():
         version = svc_conf.get('version')
         
         # Only check if build method is nexus
+        java_version = svc_conf.get('java_version')
         if svc_conf.get('build_method') == 'nexus':
             success, url = check_nexus_url(name, svc_conf)
             status_icon = "✅" if success else "❌"
             check_results.append({
                 'name': name,
                 'version': version,
+                'java_version': java_version,
                 'url': url,
                 'success': success,
                 'icon': status_icon
@@ -793,9 +795,9 @@ def main():
                 has_failures = True
             
             # Print immediate feedback
-            print(f"   {status_icon} {name} ({version}): {url}")
+            print(f"   {status_icon} {name} ({version}) [Java {java_version}]: {url}")
         else:
-             print(f"   ⏭️  {name} ({version}): Skipped (method: {svc_conf.get('build_method')})")
+             print(f"   ⏭️  {name} ({version}) [Java {java_version}]: Skipped (method: {svc_conf.get('build_method')})")
 
     # If failures, abort (even in dry-run, we show results then stop)
     if has_failures:
