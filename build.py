@@ -546,7 +546,7 @@ def generate_dockerfile(service_name, config, build_path):
         'COMMIT': config.get('commit', 'HEAD'),
         'BUILD_TOOL': config.get('build_tool', 'gradle'),
         'BUILD_METHOD': config.get('build_method', 'nexus'),
-        'SERVICE_USER': config.get('name', service_name)
+        'SERVICE_USER': config.get('name', service_name) if ' ' not in config.get('name', service_name) else service_name
     }
     
     if config.get('log_config_filename'):

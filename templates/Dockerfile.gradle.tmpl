@@ -200,13 +200,13 @@ LABEL org.opencontainers.image.source="${REPO}"
 
 # Convert APP_ARTIFACT to ENV so it persists after USER change
 
-ENV APP_ARTIFACT=${ARTIFACT_ID}
-ENV SERVICE_USER=${SERVICE_NAME}
-ENV EXTENSION=${EXTENSION}
+ENV APP_ARTIFACT="${ARTIFACT_ID}"
+ENV SERVICE_USER="${SERVICE_NAME}"
+ENV EXTENSION="${EXTENSION}"
 
-WORKDIR /opt/atlas/${APP_ARTIFACT}
+WORKDIR "/opt/atlas/${APP_ARTIFACT}"
 
-COPY --from=final-builder /build/artifact.${EXTENSION} /opt/atlas/${APP_ARTIFACT}/app.${EXTENSION}
+COPY --from=final-builder "/build/artifact.${EXTENSION}" "/opt/atlas/${APP_ARTIFACT}/app.${EXTENSION}"
 
 ENV LOGGING_CONFIG=${LOGGING_CONFIG}
 ENV LOG_DIR=${LOG_DIR}
@@ -216,28 +216,28 @@ ENV LOG_DIR=${LOG_DIR}
 ENV JAVA_OPTS=${JAVA_OPTS}
 
 # Create service user and data directories
-RUN groupadd -r ${SERVICE_USER} -g 1000 && \
-    useradd -r -g ${SERVICE_USER} -u 1000 -m ${SERVICE_USER} && \
-    mkdir -p /data/${APP_ARTIFACT}/config && \
-    mkdir -p /data/${APP_ARTIFACT}/data && \
-    chown -R ${SERVICE_USER}:${SERVICE_USER} /data/${APP_ARTIFACT} && \
-    chown ${SERVICE_USER}:${SERVICE_USER} /opt/atlas/${APP_ARTIFACT}/app.${EXTENSION} && \
-    chown -R ${SERVICE_USER}:${SERVICE_USER} /opt/atlas/${APP_ARTIFACT}
+RUN groupadd -r "${SERVICE_USER}" -g 1000 && \
+    useradd -r -g "${SERVICE_USER}" -u 1000 -m "${SERVICE_USER}" && \
+    mkdir -p "/data/${APP_ARTIFACT}/config" && \
+    mkdir -p "/data/${APP_ARTIFACT}/data" && \
+    chown -R "${SERVICE_USER}:${SERVICE_USER}" "/data/${APP_ARTIFACT}" && \
+    chown "${SERVICE_USER}:${SERVICE_USER}" "/opt/atlas/${APP_ARTIFACT}/app.${EXTENSION}" && \
+    chown -R "${SERVICE_USER}:${SERVICE_USER}" "/opt/atlas/${APP_ARTIFACT}"
 
 # Create additional log directories for Tomcat-based applications
 RUN mkdir -p /var/log/tomcat10 && \
-    chown -R ${SERVICE_USER}:${SERVICE_USER} /var/log/tomcat10
+    chown -R "${SERVICE_USER}:${SERVICE_USER}" /var/log/tomcat10
 
 
 
 VOLUME /data
 
 # Switch to service user for runtime execution
-USER ${SERVICE_USER}
+USER "${SERVICE_USER}"
 
 # Execute service
 # Use shell form to allow variable expansion
-CMD java ${JAVA_OPTS} -jar /opt/atlas/${APP_ARTIFACT}/app.${EXTENSION}
+CMD java ${JAVA_OPTS} -jar "/opt/atlas/${APP_ARTIFACT}/app.${EXTENSION}"
 
 ARG BUILD_DATE
 ARG VCS_REF
