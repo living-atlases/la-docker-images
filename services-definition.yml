@@ -182,6 +182,7 @@ services:
     classifier: exec
     branch: master
     java_version: 11
+    extension: jar
     port: 9180
     app_args: server /data/ala-sensitive-data-service/config/config.yml
   data-quality-filter-service:
