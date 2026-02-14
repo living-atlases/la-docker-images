@@ -10,7 +10,6 @@ from packaging import version as pkg_version
 # Mapping from local service name (services-definition.yml) to dependencies.yaml key
 NAME_MAPPING = {
     'ala-bie-hub': 'ala-bie',
-    'bie-index': 'species',
     'image-service': 'images',
     'specieslist-webapp': 'species-lists',
     'logger-service': 'logger',
