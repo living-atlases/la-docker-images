@@ -49,7 +49,7 @@ Options:
                             repo-branch: Clone git repo and build from branch
                             repo-tag:    Clone git repo and build from tag
                             url:         Download artifact from direct URL
-  --registry=<reg>        Docker registry to push to [default: hub.docker.com/u/livingatlases].
+  --registry=<reg>        Docker registry to push to [default: livingatlases].
   --repo=<url>            Override git repository URL.
   --branch=<branch>       Override git branch (for repo-branch method).
   --commit=<commit>       Override git commit (for repo-branch method).
@@ -100,7 +100,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 # Constants
 # Constants
 import hashlib
-DEFAULT_REGISTRY = "hub.docker.com/u/livingatlases"
+DEFAULT_REGISTRY = "livingatlases"
 DEFAULT_DEPENDENCIES_URL = "https://raw.githubusercontent.com/living-atlases/la-toolkit-backend/master/assets/dependencies.yaml"
 # Defaults if not found in dependencies
 DEFAULT_JAVA_VERSION = "11" 
@@ -113,30 +113,34 @@ def ensure_builders(registry, java_version, tool, force_rebuild=False, pull=Fals
     """
     Ensure the required builder image exists locally.
     If not, build it from the builders/ directory.
+    Note: Builders are kept LOCAL-ONLY and not prefixed with registry.
     """
-    if not registry.endswith('/'):
-        registry += '/'
-        
-    image_name = f"{registry}{tool}-builder:jdk{java_version}"
+    image_name = f"{tool}-builder:jdk{java_version}"
     
     # Check if image exists locally
     try:
         if not force_rebuild and not pull:
             subprocess.check_call(["docker", "image", "inspect", image_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            # print(f"   ✅ Builder image {image_name} already exists.")
             return
     except subprocess.CalledProcessError:
         pass # Not found or forced
         
-    # If using --pull, try to pull the builder first if it exists in the registry
+    # If using pull, we pull the EXTERNAL BASE image of the builder
     if pull:
-        print(f"   📡 Attempting to pull builder image: {image_name}...")
-        try:
-            subprocess.check_call(["docker", "pull", image_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            print(f"   ✅ Builder image {image_name} pulled successfully.")
-            return
-        except subprocess.CalledProcessError:
-             print(f"   ℹ️  Builder image {image_name} not found in registry. Will build locally.")
+        base_image = ""
+        if tool == "gradle":
+            # From builders/gradle/Dockerfile: gradle:${GRADLE_VERSION}-jdk${JDK_VERSION}-jammy
+            base_image = f"gradle:7-jdk{java_version}-jammy"
+        elif tool == "maven":
+            # From builders/maven/Dockerfile: maven:${MAVEN_VERSION}-eclipse-temurin-${JDK_VERSION}
+            base_image = f"maven:3.9-eclipse-temurin-{java_version}"
+            
+        if base_image:
+            print(f"   📡 Pulling external base image for builder: {base_image}...")
+            try:
+                subprocess.check_call(["docker", "pull", base_image], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except subprocess.CalledProcessError:
+                print(f"   ⚠️  Warning: Failed to pull base image {base_image}. Build might use local cache.")
 
     print(f"   🔨 Building builder image: {image_name}...")
     
@@ -605,8 +609,15 @@ def build_service(service_name, service_config, dry_run=False, no_cache=False):
     if no_cache:
         cmd.append("--no-cache")
         
+    # We DO NOT use --pull directly because it fails with our local builders.
+    # Instead, we pull the external runtime base image if requested.
     if service_config.get('pull'):
-        cmd.append("--pull")
+        base_image = f"eclipse-temurin:{java_version}-jre-jammy"
+        print(f"   📡 Pulling external runtime base image: {base_image}...")
+        try:
+            subprocess.check_call(["docker", "pull", base_image], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except subprocess.CalledProcessError:
+            print(f"   ⚠️  Warning: Failed to pull base image {base_image}. Build might use local cache.")
         
     print(f"   🔨 Building {image_name}...")
     try:
