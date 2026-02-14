@@ -167,7 +167,6 @@ services:
     java_version: 11
     port: 9180
     app_args: server /data/ala-namematching-server/config/config.yml
-    maven_profiles: ""
   ala-sensitive-data-server:
     name: sensitive-data-service
     description: ALA Sensitive Data Service
@@ -182,7 +181,6 @@ services:
     java_version: 11
     port: 9180
     app_args: server /data/ala-sensitive-data-service/config/config.yml
-    maven_profiles: ""
   data-quality-filter-service:
     name: data-quality
     description: Data Quality Filter Service
