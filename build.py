@@ -109,7 +109,7 @@ TEMPLATES_DIR = os.path.join(SCRIPT_DIR, "templates")
 SERVICES_DIR = os.path.join(SCRIPT_DIR, "services")
 BUILDERS_DIR = os.path.join(SCRIPT_DIR, "builders")
 
-def ensure_builders(registry, java_version, tool, force_rebuild=False):
+def ensure_builders(registry, java_version, tool, force_rebuild=False, pull=False):
     """
     Ensure the required builder image exists locally.
     If not, build it from the builders/ directory.
@@ -121,7 +121,7 @@ def ensure_builders(registry, java_version, tool, force_rebuild=False):
     
     # Check if image exists locally
     try:
-        if not force_rebuild and not args.get('--pull'):
+        if not force_rebuild and not pull:
             subprocess.check_call(["docker", "image", "inspect", image_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             # print(f"   ✅ Builder image {image_name} already exists.")
             return
@@ -129,7 +129,7 @@ def ensure_builders(registry, java_version, tool, force_rebuild=False):
         pass # Not found or forced
         
     # If using --pull, try to pull the builder first if it exists in the registry
-    if args.get('--pull'):
+    if pull:
         print(f"   📡 Attempting to pull builder image: {image_name}...")
         try:
             subprocess.check_call(["docker", "pull", image_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -778,7 +778,7 @@ def main():
         # We only need builders for repo-branch/repo-tag methods, 
         # but the templates use them as base stages anyway for Nexus/URL too
         # to have a consistent build environment (scripts, etc)
-        ensure_builders(registry, java_version, tool, args.get('--build-builders'))
+        ensure_builders(registry, java_version, tool, args.get('--build-builders'), args.get('--pull'))
         
         build_service(name, svc_conf, args['--dry-run'], args['--no-cache'])
 
