@@ -39,6 +39,8 @@ FROM ${BUILDER_IMAGE} AS base-builder
 
 WORKDIR /build
 
+COPY settings.xml /build/settings.xml
+
 # Ensure bash is available for all stages
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -95,17 +97,17 @@ RUN echo "🔨 Building with ${BUILD_TOOL} in ${BUILD_DIR}..."
 
 RUN --mount=type=cache,target=/root/.m2 \
     echo "📦 Installing root parent POM..." && \
-    mvn install -N -DskipTests -U || true && \
+    mvn -s /build/settings.xml install -N -DskipTests -U || true && \
     if [ "${BUILD_DIR}" != "." ]; then \
     echo "📦 Installing module parent POM: ${BUILD_DIR}..." && \
-    mvn install -N -DskipTests -U -f "${BUILD_DIR}/pom.xml" || true && \
+    mvn -s /build/settings.xml install -N -DskipTests -U -f "${BUILD_DIR}/pom.xml" || true && \
     echo "🔨 Building module ${BUILD_DIR} from root..." && \
-    mvn clean package -DskipTests -P war -pl "${BUILD_DIR}" -am -U && \
+    mvn -s /build/settings.xml clean package -DskipTests -P war -pl "${BUILD_DIR}" -am -U && \
     find "${BUILD_DIR}/target/" -maxdepth 1 -name "*.${EXTENSION}" -exec mv {} /build/artifact.${EXTENSION} \; || \
     find "${BUILD_DIR}/target/" -maxdepth 1 -name "*.jar" -exec mv {} /build/artifact.${EXTENSION} \; ; \
     else \
     echo "🔨 Building from root..." && \
-    mvn clean package -DskipTests -P war -U && \
+    mvn -s /build/settings.xml clean package -DskipTests -P war -U && \
     find "target/" -maxdepth 1 -name "*.${EXTENSION}" -exec mv {} /build/artifact.${EXTENSION} \; || \
     find "target/" -maxdepth 1 -name "*.jar" -exec mv {} /build/artifact.${EXTENSION} \; ; \
     fi
@@ -141,12 +143,12 @@ RUN echo "🔨 Building with ${BUILD_TOOL} in ${BUILD_DIR}..."
 RUN --mount=type=cache,target=/root/.m2 \
     if [ "${BUILD_DIR}" != "." ]; then \
     echo "🔨 Building module ${BUILD_DIR} from root..." && \
-    mvn clean package -DskipTests -P war -pl "${BUILD_DIR}" -am -U && \
+    mvn -s /build/settings.xml clean package -DskipTests -P war -pl "${BUILD_DIR}" -am -U && \
     find "${BUILD_DIR}/target/" -maxdepth 1 -name "*.${EXTENSION}" -exec mv {} /build/artifact.${EXTENSION} \; || \
     find "${BUILD_DIR}/target/" -maxdepth 1 -name "*.jar" -exec mv {} /build/artifact.${EXTENSION} \; ; \
     else \
     echo "🔨 Building from root..." && \
-    mvn clean package -DskipTests -P war -U && \
+    mvn -s /build/settings.xml clean package -DskipTests -P war -U && \
     find "target/" -maxdepth 1 -name "*.${EXTENSION}" -exec mv {} /build/artifact.${EXTENSION} \; || \
     find "target/" -maxdepth 1 -name "*.jar" -exec mv {} /build/artifact.${EXTENSION} \; ; \
     fi

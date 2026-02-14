@@ -349,19 +349,23 @@ def build_service(service_name, service_config, dry_run=False, no_cache=False):
     scripts_dest = os.path.join(build_path, 'scripts')
     os.makedirs(scripts_dest, exist_ok=True)
     src_script = os.path.join(TEMPLATES_DIR, 'scripts', 'download-artifact.sh')
-    if os.path.exists(src_script):
     dest_script = os.path.join(scripts_dest, 'download-artifact.sh')
+    
     if os.path.exists(src_script):
         shutil.copy(src_script, dest_script)
     else:
         print(f"Warning: {src_script} not found. Build might fail if using Nexus method.")
 
-    # Copy settings.xml if it exists in templates
+    # Copy settings.xml if it exists in templates, else create default
     src_settings = os.path.join(TEMPLATES_DIR, 'settings.xml')
     dest_settings = os.path.join(build_path, 'settings.xml')
     if os.path.exists(src_settings):
         shutil.copy(src_settings, dest_settings)
-        print(f"   ℹ️  Copied settings.xml to {build_path}")    
+        print(f"   ℹ️  Copied settings.xml to {build_path}")
+    else:
+        # Create minimal settings
+        with open(dest_settings, 'w') as f:
+            f.write('<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"><mirrors/></settings>')    
     if dry_run:
         print(f"   ✅ Dockerfile generated in {build_path}")
         print(f"   [Dry Run] Would build: {image_name}")
