@@ -139,7 +139,7 @@ services:
     log_config_filename: logback.xml
   alerts:
     name: alerts
-    description: "users can subscribe to notifications about new occurrences regions,\u2026"
+    description: ''
     build_tool: gradle
     repository: https://github.com/AtlasOfLivingAustralia/alerts
     artifacts: alerts
