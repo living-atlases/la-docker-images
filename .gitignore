@@ -1,0 +1,6 @@
+venv/
+__pycache__/
+*.pyc
+build/
+services-definition.yml
+build-config.yml

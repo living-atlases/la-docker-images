@@ -1,0 +1,220 @@
+# syntax=docker/dockerfile:1.4
+# ${SERVICE_NAME} - ${DESCRIPTION}
+# AUTO-GENERATED - DO NOT EDIT MANUALLY
+# Edit ansible/roles/docker-common/tasks/generate-compose.yml and re-run ansible
+#
+# This Dockerfile supports multiple build methods:
+#   - nexus: Download pre-built artifact from Nexus repository
+#   - url: Download artifact from a custom URL
+#   - repo-branch: Clone repository and build from a specific branch
+#   - repo-commit: Clone repository and build from a specific commit
+#
+# Supports Java JAR runtime
+#
+# ============================================
+# HOW TO SELECT BUILD_METHOD
+# ============================================
+# BUILD_METHOD selection: nexus | url | repo-branch | repo-commit
+#   Usage: docker build --build-arg BUILD_METHOD=nexus ...
+#   Default: nexus (fast, downloads pre-built artifact from ALA's nexus)
+#
+# ============================================
+# GLOBAL BUILD ARGUMENTS
+# ============================================
+# ============================================
+# GLOBAL BUILD ARGUMENTS
+# ============================================
+ARG BUILDER_IMAGE=maven-builder:jdk${JAVA_VERSION}
+ARG BUILD_METHOD=nexus
+ARG BUILD_TOOL=maven
+ARG RUN_TOOL=java-jar
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG BUILD_DIR=.
+
+# ============================================
+# Stage 1: Base builder image
+# ============================================
+FROM ${BUILDER_IMAGE} AS base-builder
+
+WORKDIR /build
+
+# Ensure bash is available for all stages
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# ============================================
+# Stage 2: Build from Nexus
+# ============================================
+FROM base-builder AS builder-nexus
+
+ARG VERSION=${VERSION}
+ARG ARTIFACT=${ARTIFACT_ID}
+ARG EXTENSION=${EXTENSION}
+ARG CLASSIFIER=${CLASSIFIER}
+
+COPY scripts/download-artifact.sh /usr/local/bin/download-artifact.sh
+RUN chmod +x /usr/local/bin/download-artifact.sh
+RUN --mount=type=cache,target=/cache/nexus,sharing=locked \
+    EXTENSION=${EXTENSION} CLASSIFIER=${CLASSIFIER} BUILD_METHOD=nexus /usr/local/bin/download-artifact.sh
+
+# ============================================
+# Stage 3: Build from URL
+# ============================================
+FROM base-builder AS builder-url
+
+ARG ARTIFACT_URL=""
+
+COPY scripts/download-artifact.sh /usr/local/bin/download-artifact.sh
+RUN chmod +x /usr/local/bin/download-artifact.sh
+RUN EXTENSION=${EXTENSION} BUILD_METHOD=url /usr/local/bin/download-artifact.sh
+
+# ============================================
+# Stage 4: Build from Repository Branch
+# ============================================
+FROM base-builder AS builder-repo-branch
+
+ARG REPO=${REPO}
+ARG BRANCH=${BRANCH}
+ARG BUILD_TOOL=maven
+ARG BUILD_DIR=.
+
+RUN echo "🔍 Cloning repository..." && \
+    echo "   Repo: ${REPO}"
+
+RUN git clone "${REPO}" . && \
+    git log -1 --oneline && \
+    echo "✅ Repository cloned"
+
+RUN echo "📦 Checking out branch: ${BRANCH}"
+
+RUN git checkout "${BRANCH}" && \
+    git log -1 --oneline && \
+    echo "✅ Branch checked out"
+
+RUN echo "🔨 Building with ${BUILD_TOOL} in ${BUILD_DIR}..."
+
+RUN --mount=type=cache,target=/root/.m2 \
+    echo "📦 Installing root parent POM..." && \
+    mvn install -N -DskipTests -U || true && \
+    if [ "${BUILD_DIR}" != "." ]; then \
+    echo "📦 Installing module parent POM: ${BUILD_DIR}..." && \
+    mvn install -N -DskipTests -U -f "${BUILD_DIR}/pom.xml" || true && \
+    echo "🔨 Building module ${BUILD_DIR} from root..." && \
+    mvn clean package -DskipTests -P war -pl "${BUILD_DIR}" -am -U && \
+    find "${BUILD_DIR}/target/" -maxdepth 1 -name "*.${EXTENSION}" -exec mv {} /build/artifact.${EXTENSION} \; || \
+    find "${BUILD_DIR}/target/" -maxdepth 1 -name "*.jar" -exec mv {} /build/artifact.${EXTENSION} \; ; \
+    else \
+    echo "🔨 Building from root..." && \
+    mvn clean package -DskipTests -P war -U && \
+    find "target/" -maxdepth 1 -name "*.${EXTENSION}" -exec mv {} /build/artifact.${EXTENSION} \; || \
+    find "target/" -maxdepth 1 -name "*.jar" -exec mv {} /build/artifact.${EXTENSION} \; ; \
+    fi
+
+RUN ls -lh /build/artifact.${EXTENSION} && \
+    echo "✅ Build completed successfully"
+
+# ============================================
+# Stage 5: Build from Repository Commit
+# ============================================
+FROM base-builder AS builder-repo-commit
+
+ARG REPO=${REPO}
+ARG COMMIT=HEAD
+ARG BUILD_TOOL=maven
+ARG BUILD_DIR=.
+
+RUN echo "🔍 Cloning repository..." && \
+    echo "   Repo: ${REPO}"
+
+RUN git clone "${REPO}" . && \
+    git log -1 --oneline && \
+    echo "✅ Repository cloned"
+
+RUN echo "📦 Checking out commit: ${COMMIT}"
+
+RUN git checkout "${COMMIT}" && \
+    git log -1 --oneline && \
+    echo "✅ Commit checked out"
+
+RUN echo "🔨 Building with ${BUILD_TOOL} in ${BUILD_DIR}..."
+
+RUN --mount=type=cache,target=/root/.m2 \
+    if [ "${BUILD_DIR}" != "." ]; then \
+    echo "🔨 Building module ${BUILD_DIR} from root..." && \
+    mvn clean package -DskipTests -P war -pl "${BUILD_DIR}" -am -U && \
+    find "${BUILD_DIR}/target/" -maxdepth 1 -name "*.${EXTENSION}" -exec mv {} /build/artifact.${EXTENSION} \; || \
+    find "${BUILD_DIR}/target/" -maxdepth 1 -name "*.jar" -exec mv {} /build/artifact.${EXTENSION} \; ; \
+    else \
+    echo "🔨 Building from root..." && \
+    mvn clean package -DskipTests -P war -U && \
+    find "target/" -maxdepth 1 -name "*.${EXTENSION}" -exec mv {} /build/artifact.${EXTENSION} \; || \
+    find "target/" -maxdepth 1 -name "*.jar" -exec mv {} /build/artifact.${EXTENSION} \; ; \
+    fi
+
+RUN ls -lh /build/artifact.${EXTENSION} && \
+    echo "✅ Build completed successfully"
+
+# ============================================
+# Stage 6: Consolidate build stages
+# ============================================
+# This stage selects the appropriate builder based on BUILD_METHOD argument
+# The FROM instruction uses variable substitution: builder-nexus, builder-url, etc
+# Only the selected builder stage is used; others are ignored
+# Example: --build-arg BUILD_METHOD=repo-branch will use builder-repo-branch
+# hadolint ignore=DL3006
+FROM builder-${BUILD_METHOD} AS final-builder
+
+# ============================================
+# Stage 7: Final Runtime - Java JAR with setup
+# ============================================
+FROM eclipse-temurin:${JAVA_VERSION}-jre-jammy
+
+ARG SERVICE_USER=${SERVICE_NAME}
+ARG APP_ARTIFACT=${ARTIFACT_ID}
+ARG LOG_DIR=${LOG_DIR}
+
+LABEL org.opencontainers.image.title="${SERVICE_NAME}"
+LABEL org.opencontainers.image.description="${DESCRIPTION}"
+LABEL org.opencontainers.image.source="${REPO}"
+
+# Convert APP_ARTIFACT to ENV so it persists after USER change
+ENV APP_ARTIFACT=${ARTIFACT_ID}
+ENV SERVICE_USER=${SERVICE_NAME}
+ENV EXTENSION=${EXTENSION}
+
+WORKDIR /opt/atlas/${APP_ARTIFACT}
+
+COPY --from=final-builder /build/artifact.${EXTENSION} /opt/atlas/${APP_ARTIFACT}/app.${EXTENSION}
+
+# Logging configuration
+ENV LOGGING_CONFIG=${LOGGING_CONFIG}
+ENV LOG_DIR=${LOG_DIR}
+
+# Default JAVA_OPTS - will be overridden by docker-compose .env file
+# The docker-compose service will set ${SERVICE_NAME_UPPER}_JAVA_OPTS environment variable
+# Uses tomcat_java_opts if available, otherwise uses safe defaults
+ENV JAVA_OPTS=${JAVA_OPTS}
+
+# Create additional log directories for Tomcat-based applications
+RUN mkdir -p /var/log/tomcat10 && \
+    chown -R ${SERVICE_USER}:${SERVICE_USER} /var/log/tomcat10
+
+
+
+VOLUME /data
+
+# Switch to service user for runtime execution
+USER ${SERVICE_USER}
+
+# Execute service
+# Use shell form to allow variable expansion
+CMD java ${JAVA_OPTS} -jar /opt/atlas/${APP_ARTIFACT}/app.${EXTENSION}
+
+ARG BUILD_DATE
+ARG VCS_REF
+ARG VERSION=${VERSION}
+
+LABEL org.opencontainers.image.created="${BUILD_DATE}"
+LABEL org.opencontainers.image.revision="${VCS_REF}"
+LABEL org.opencontainers.image.version="${VERSION}"
+
