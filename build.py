@@ -109,7 +109,7 @@ TEMPLATES_DIR = os.path.join(SCRIPT_DIR, "templates")
 SERVICES_DIR = os.path.join(SCRIPT_DIR, "services")
 BUILDERS_DIR = os.path.join(SCRIPT_DIR, "builders")
 
-def ensure_builders(registry, java_version, tool, force_rebuild=False, pull=False):
+def ensure_builders(registry, java_version, tool, force_rebuild=False, pull=False, dry_run=False):
     """
     Ensure the required builder image exists locally.
     If not, build it from the builders/ directory.
@@ -136,11 +136,18 @@ def ensure_builders(registry, java_version, tool, force_rebuild=False, pull=Fals
             base_image = f"maven:3.9-eclipse-temurin-{java_version}"
             
         if base_image:
-            print(f"   📡 Pulling external base image for builder: {base_image}...")
-            try:
-                subprocess.check_call(["docker", "pull", base_image], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            except subprocess.CalledProcessError:
-                print(f"   ⚠️  Warning: Failed to pull base image {base_image}. Build might use local cache.")
+            if dry_run:
+                print(f"   [Dry Run] Would pull external base image for builder: {base_image}")
+            else:
+                print(f"   📡 Pulling external base image for builder: {base_image}...")
+                try:
+                    subprocess.check_call(["docker", "pull", base_image], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except subprocess.CalledProcessError:
+                    print(f"   ⚠️  Warning: Failed to pull base image {base_image}. Build might use local cache.")
+
+    if dry_run:
+        print(f"   [Dry Run] Would build builder image: {image_name}")
+        return
 
     print(f"   🔨 Building builder image: {image_name}...")
     
@@ -798,7 +805,7 @@ def main():
         # We only need builders for repo-branch/repo-tag methods, 
         # but the templates use them as base stages anyway for Nexus/URL too
         # to have a consistent build environment (scripts, etc)
-        ensure_builders(registry, java_version, tool, args.get('--build-builders'), args.get('--pull'))
+        ensure_builders(registry, java_version, tool, args.get('--build-builders'), args.get('--pull'), dry_run=args['--dry-run'])
         
         build_service(name, svc_conf, args['--dry-run'], args['--no-cache'])
 

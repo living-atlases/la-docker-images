@@ -16,8 +16,8 @@ NAME_MAPPING = {
     'spatial-hub': 'spatial',
     'sds-webapp2': 'sds',
     'doi-service': 'doi',
-    'ala-namematching-server': 'namematching',
-    'ala-sensitive-data-server': 'sensitive-data',
+    'ala-namematching-server': 'namematching-service',
+    'ala-sensitive-data-server': 'sensitive-data-service',
     'data-quality-filter-service': 'data-quality',
     'la-pipelines': 'pipelines'
 }
@@ -212,7 +212,7 @@ def determine_java_version(service_name, service_version, dependencies_dict):
         except Exception:
             pass
             
-    if service_version == 'develop' or not service_version:
+    if service_version in ['develop', 'latest'] or not service_version:
         return highest_java
         
     return matched_java
