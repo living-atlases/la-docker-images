@@ -82,6 +82,7 @@ from docopt import docopt
 from string import Template
 import urllib.request
 import urllib.error
+import xml.etree.ElementTree as ET
 
 # Add scripts dir to path to import deps_utils
 sys.path.append(os.path.join(os.path.dirname(__file__), 'scripts'))
@@ -133,7 +134,7 @@ def load_config(config_file, defs_file):
     merged_services = defs.get('services', {}).copy()
     
     # Update with overrides from build-config
-    if 'services' in config:
+    if 'services' in config and config['services']:
         for name, overrides in config['services'].items():
             if name in merged_services:
                 merged_services[name].update(overrides)
@@ -216,6 +217,42 @@ def check_nexus_url(service_name, config):
         return False, nexus_url
     except Exception as e:
         return False, nexus_url
+
+def get_nexus_versions(service_name, config, n=1):
+    """Fetch last N versions from Nexus metadata"""
+    artifact = config.get('artifacts', service_name)
+    # Default to releases for metadata search
+    nexus_base = "https://nexus.ala.org.au/repository/releases"
+    url = f"{nexus_base}/au/org/ala/{artifact}/maven-metadata.xml"
+    
+    print(f"   🔎 Fetching metadata for {service_name}: {url}")
+    try:
+        with urllib.request.urlopen(url) as response:
+            if response.status != 200:
+                print(f"   ⚠️  Failed to fetch metadata for {service_name}")
+                return []
+            tree = ET.parse(response)
+            root = tree.getroot()
+            # <versioning><versions><version>...</version></versions></versioning>
+            versions = [v.text for v in root.findall(".//version")]
+            
+            # Filter out snapshots if we are looking for releases
+            # (Though metadata from releases repo shouldn't have them usually)
+            
+            # Sort versions
+            try:
+                if deps_utils:
+                    versions.sort(key=lambda v: deps_utils.pkg_version.parse(v))
+                else:
+                    versions.sort()
+            except Exception:
+                versions.sort()
+                
+            return versions[-n:]
+            
+    except Exception as e:
+        print(f"   ⚠️  Error fetching metadata for {service_name}: {e}")
+        return []
 
 def generate_dockerfile(service_name, config, build_path):
     """Generate Dockerfile from template"""
@@ -313,10 +350,18 @@ def build_service(service_name, service_config, dry_run=False, no_cache=False):
     os.makedirs(scripts_dest, exist_ok=True)
     src_script = os.path.join(TEMPLATES_DIR, 'scripts', 'download-artifact.sh')
     if os.path.exists(src_script):
-        shutil.copy(src_script, os.path.join(scripts_dest, 'download-artifact.sh'))
+    dest_script = os.path.join(scripts_dest, 'download-artifact.sh')
+    if os.path.exists(src_script):
+        shutil.copy(src_script, dest_script)
     else:
         print(f"Warning: {src_script} not found. Build might fail if using Nexus method.")
-    
+
+    # Copy settings.xml if it exists in templates
+    src_settings = os.path.join(TEMPLATES_DIR, 'settings.xml')
+    dest_settings = os.path.join(build_path, 'settings.xml')
+    if os.path.exists(src_settings):
+        shutil.copy(src_settings, dest_settings)
+        print(f"   ℹ️  Copied settings.xml to {build_path}")    
     if dry_run:
         print(f"   ✅ Dockerfile generated in {build_path}")
         print(f"   [Dry Run] Would build: {image_name}")
@@ -375,47 +420,74 @@ def main():
     config = load_config(config_file, defs_file)
     
     services_to_build = []
-    resolved_configs = {}
     
     if args['--all']:
-        services_to_build = list(config['services'].keys())
+        services_to_build_names = list(config['services'].keys())
     elif args['--service']:
-        services_to_build = args['--service']
+        services_to_build_names = args['--service']
+    else:
+        services_to_build_names = []
         
-    if not services_to_build:
+    if not services_to_build_names:
         print("No services selected to build.")
         sys.exit(0)
     
-    for name in services_to_build:
+    # --- EXPANSION PHASE ---
+    # Expand services based on versions (e.g. latest -> [1.0.1, 1.0.2])
+    expanded_build_list = [] # List of (service_name, final_config)
+    
+    for name in services_to_build_names:
         svc_conf = get_service_config(name, config, args)
         
-        # Determine Java Version Dynamically
-        # Priority:
-        # 1. CLI arg --java-version (already in svc_conf by get_service_config)
-        # 2. build-config.yml overrides (already in svc_conf)
-        # 3. Dynamic determination via dependencies.yaml (NEW)
-        # 4. Default
+        is_nexus = svc_conf.get('build_method') == 'nexus'
+        version = svc_conf.get('version', 'latest')
         
-        if 'java_version' not in svc_conf and deps_utils and dependencies:
-             # Calculate based on version
-             version_to_build = svc_conf.get('version', 'latest')
-             dyn_java = deps_utils.determine_java_version(name, version_to_build, dependencies)
-             svc_conf['java_version'] = dyn_java
-             print(f"   ☕ Resolved Java Version for {name} ({version_to_build}): {dyn_java}")
+        # Check if we need to deduce versions from Nexus
+        # Condition: 
+        # 1. Method is Nexus
+        # 2. Version is 'latest' (meaning user didn't specify a specific version tag)
+        if is_nexus and version == 'latest':
+            n_tags = int(args.get('--n-tags', 1))
+            versions = get_nexus_versions(name, svc_conf, n_tags)
+            
+            if not versions:
+                print(f"   ⚠️  No versions found for {name} in Nexus metadata. Keeping 'latest' (will likely fail).")
+                expanded_build_list.append((name, svc_conf))
+            else:
+                print(f"   ✨ Resolved versions for {name}: {versions}")
+                for v in versions:
+                    v_conf = svc_conf.copy()
+                    v_conf['version'] = v
+                    expanded_build_list.append((name, v_conf))
+        else:
+            # Explicit version or not Nexus
+            expanded_build_list.append((name, svc_conf))
+
+    # --- RESOLVE VALIDATION & JAVA VERSIONS ---
+    final_build_tasks = [] #(name, config)
+    
+    for name, svc_conf in expanded_build_list:
+        # Determine Java Version
+        if 'java_version' not in svc_conf or svc_conf['java_version'] == DEFAULT_JAVA_VERSION:
+             # Try to resolve dynamically if possible or if it was default
+             if deps_utils and dependencies:
+                 v = svc_conf.get('version', 'latest')
+                 dyn = deps_utils.determine_java_version(name, v, dependencies)
+                 svc_conf['java_version'] = dyn
+                 # print(f"   ☕ Resolved Java Version for {name} ({v}): {dyn}")
              
-        if 'java_version' not in svc_conf:
-             svc_conf['java_version'] = DEFAULT_JAVA_VERSION
-        
-        # Store for later use
-        resolved_configs[name] = svc_conf
+             if 'java_version' not in svc_conf:
+                 svc_conf['java_version'] = DEFAULT_JAVA_VERSION
+
+        final_build_tasks.append((name, svc_conf))
 
     # --- GLOBAL CHECK PHASE ---
     print("\n🔎 Checking Nexus URLs for all selected services...")
     check_results = []
     has_failures = False
     
-    for name in services_to_build:
-        svc_conf = resolved_configs[name]
+    for name, svc_conf in final_build_tasks:
+        version = svc_conf.get('version')
         
         # Only check if build method is nexus
         if svc_conf.get('build_method') == 'nexus':
@@ -423,7 +495,7 @@ def main():
             status_icon = "✅" if success else "❌"
             check_results.append({
                 'name': name,
-                'version': svc_conf.get('version'),
+                'version': version,
                 'url': url,
                 'success': success,
                 'icon': status_icon
@@ -432,9 +504,9 @@ def main():
                 has_failures = True
             
             # Print immediate feedback
-            print(f"   {status_icon} {name}: {url}")
+            print(f"   {status_icon} {name} ({version}): {url}")
         else:
-             print(f"   ⏭️  {name}: Skipped (method: {svc_conf.get('build_method')})")
+             print(f"   ⏭️  {name} ({version}): Skipped (method: {svc_conf.get('build_method')})")
 
     # If failures, abort (even in dry-run, we show results then stop)
     if has_failures:
@@ -449,9 +521,7 @@ def main():
     print("\n✅ All Nexus URLs validated. Proceeding...\n")
 
     # --- BUILD PHASE ---
-    for name in services_to_build:
-        check_results # unused here but valid
-        svc_conf = resolved_configs[name]
+    for name, svc_conf in final_build_tasks:
         build_service(name, svc_conf, args['--dry-run'], args['--no-cache'])
 
 if __name__ == '__main__':
