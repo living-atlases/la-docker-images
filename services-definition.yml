@@ -178,7 +178,7 @@ services:
     name: data-quality
     description: Data Quality Filter Service
     build_tool: gradle
-    repository: ''
+    repository: https://github.com/AtlasOfLivingAustralia/data-quality-filter-service
     artifacts: data-quality-filter-service
     log_config_filename: logback.xml
   la-pipelines:
@@ -193,7 +193,7 @@ services:
     name: biocollect
     description: advanced data collection tool for biodiversity science
     build_tool: gradle
-    repository: ''
+    repository: https://github.com/AtlasOfLivingAustralia/biocollect
     artifacts: biocollect
     log_config_filename: logback.xml
     classifier: exec
@@ -202,7 +202,7 @@ services:
     name: pdfgen
     description: Service for turning .docs into .pdfs (used by biocollect)
     build_tool: maven
-    repository: ''
+    repository: https://github.com/AtlasOfLivingAustralia/pdf-service
     artifacts: pdfgen
     classifier: all
     extension: jar
@@ -210,7 +210,7 @@ services:
     name: ecodata-reporting
     description: provides reporting service for ecodata
     build_tool: maven
-    repository: ''
+    repository: https://github.com/AtlasOfLivingAustralia/ecodata
     artifacts: ecodata
     extra_params:
     - key: java.io.tmpdir
