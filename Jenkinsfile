@@ -11,14 +11,14 @@ pipeline {
         choice(name: 'SERVICE', choices: ['all', 'collectory', 'ala-hub', 'biocache-service', 'bie-index', 'regions', 'cas', 'userdetails', 'apikey', 'cas-management', 'spatial-service', 'dashboard', 'alerts', 'biocollect', 'pdfgen', 'ecodata', 'ala-namematching-server', 'ala-sensitive-data-server', 'image-service', 'doi-service', 'data-quality-filter-service'], description: 'Service to build')
         string(name: 'TAG', defaultValue: '', description: 'Version/Tag to build (leave empty for latest/develop)')
         string(name: 'BRANCH', defaultValue: '', description: 'Git branch for repo-branch builds (optional)')
-        booleanParam(name: 'PUSH', defaultValue: false, description: 'Push images to Docker Hub')
+        booleanParam(name: 'PUSH', defaultValue: true, description: 'Push images to Docker Hub')
         booleanParam(name: 'DRY_RUN', defaultValue: false, description: 'Dry Run (generate Dockerfiles only)')
         booleanParam(name: 'FORCE_PULL', defaultValue: true, description: 'Pull base images')
     }
 
     environment {
         // Build Config
-        DOCKER_REGISTRY_CREDS = 'docker-hub' // ID of credentials in Jenkins
+        DOCKER_REGISTRY_CREDS = 'docker-hub-la' // ID of credentials in Jenkins
     }
 
     stages {
@@ -66,8 +66,8 @@ pipeline {
                     if (params.PUSH && !params.DRY_RUN) {
                         buildCmd += " --push"
                         
-                        withCredentials([usernamePassword(credentialsId: env.DOCKER_REGISTRY_CREDS, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                            sh "echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin"
+                        withCredentials([usernamePassword(credentialsId: env.DOCKER_REGISTRY_CREDS, usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+                            sh "echo ${DH_PASS} | docker login -u ${DH_USER} --password-stdin"
                             sh buildCmd
                         }
                     } else {
