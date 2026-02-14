@@ -162,6 +162,7 @@ services:
     build_method: repo-branch
     build_dir: server
     classifier: exec
+    extension: jar
     branch: master
   ala-sensitive-data-server:
     name: sensitive-data-service
