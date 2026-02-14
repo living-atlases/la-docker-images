@@ -80,7 +80,6 @@ from packaging import version as pkg_version
 import json
 import shutil
 import subprocess
-import subprocess
 from docopt import docopt
 from string import Template
 import urllib.request
@@ -97,7 +96,6 @@ except ImportError:
 # Determine script location to resolve relative paths correctly
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
-# Constants
 # Constants
 import hashlib
 DEFAULT_REGISTRY = "livingatlases"
@@ -641,10 +639,6 @@ def build_service(service_name, service_config, dry_run=False, no_cache=False):
             print("   ✅ Push successful")
             
     except subprocess.CalledProcessError as e:
-        print(f"   ❌ Build failed for {service_name}")
-        sys.exit(1)
-
-        print(f"   ❌ Build failed for {service_name}")
         sys.exit(1)
 
 def main():

@@ -25,8 +25,12 @@ pipeline {
         stage('Setup Environment') {
             steps {
                 script {
-                    sh "python3 -m venv venv"
-                    sh "./venv/bin/pip install -r requirements.txt"
+                    sh '''
+                        if [ ! -d venv ]; then
+                            python3 -m venv venv
+                        fi
+                        ./venv/bin/pip install -q -r requirements.txt
+                    '''
                 }
             }
         }
@@ -34,41 +38,30 @@ pipeline {
         stage('Build & Push') {
             steps {
                 script {
-                    def buildCmd = "./venv/bin/python build.py"
-
-                    // Service Selection
-                    if (params.SERVICE && params.SERVICE != 'all') {
-                        buildCmd += " --service=${params.SERVICE}"
-                    } else {
-                        buildCmd += " --all"
-                    }
-
-                    // Version/Tag
-                    if (params.TAG) {
-                        buildCmd += " --tag=${params.TAG}"
-                    }
+                    def args = []
                     
-                    // Branch override
-                    if (params.BRANCH) {
-                        buildCmd += " --branch=${params.BRANCH}"
+                    if (params.SERVICE && params.SERVICE != 'all') {
+                        args << "--service=${params.SERVICE}"
+                    } else {
+                        args << "--all"
                     }
 
-                    // Options
-                    if (params.DRY_RUN) {
-                        buildCmd += " --dry-run"
-                    }
+                    if (params.TAG) args << "--tag=${params.TAG}"
+                    if (params.BRANCH) args << "--branch=${params.BRANCH}"
+                    if (params.DRY_RUN) args << "--dry-run"
+                    if (params.FORCE_PULL) args << "--pull"
+                    if (params.PUSH && !params.DRY_RUN) args << "--push"
 
-                    if (params.FORCE_PULL) {
-                        buildCmd += " --pull"
-                    }
+                    def buildCmd = "./venv/bin/python build.py ${args.join(' ')}"
 
-                    // Registry Login & Push
                     if (params.PUSH && !params.DRY_RUN) {
-                        buildCmd += " --push"
-                        
                         withCredentials([usernamePassword(credentialsId: env.DOCKER_REGISTRY_CREDS, usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
-                            sh "echo ${DH_PASS} | docker login -u ${DH_USER} --password-stdin"
-                            sh buildCmd
+                            sh 'echo $DH_PASS | docker login -u $DH_USER --password-stdin'
+                            try {
+                                sh buildCmd
+                            } finally {
+                                sh 'docker logout'
+                            }
                         }
                     } else {
                         sh buildCmd
