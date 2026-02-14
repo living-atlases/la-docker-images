@@ -162,7 +162,7 @@ def determine_java_version(service_name, service_version, dependencies_dict):
     """
     Determine Java version from LA Toolkit dependencies.yaml
     """
-    default_java = '11' # Fallback default
+    # default_java = '11' # REMOVED: Should not fallback to default
     
     # Resolve name mapping
     dep_key = NAME_MAPPING.get(service_name, service_name)
@@ -175,11 +175,11 @@ def determine_java_version(service_name, service_version, dependencies_dict):
             dep_key = dep_key.replace('_', '-')
         else:
             # Service not found in dependencies
-            return default_java
+            return None
 
     service_deps = dependencies_dict.get(dep_key, {})
     if not service_deps:
-        return default_java
+        return None
 
     highest_java = None
     matched_java = None
@@ -214,6 +214,6 @@ def determine_java_version(service_name, service_version, dependencies_dict):
             pass
             
     if service_version == 'develop' or not service_version:
-        return highest_java if highest_java else default_java
+        return highest_java
         
-    return matched_java if matched_java else (highest_java if highest_java else default_java)
+    return matched_java

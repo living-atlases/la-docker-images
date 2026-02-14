@@ -522,7 +522,7 @@ def generate_dockerfile(service_name, config, build_path):
         'SERVICE_NAME_UPPER': service_name.upper().replace('-', '_'),
         'DESCRIPTION': config.get('description', ''),
         'VERSION': config.get('version', 'latest'),
-        'JAVA_VERSION': str(config.get('java_version', DEFAULT_JAVA_VERSION)),
+        'JAVA_VERSION': str(config.get('java_version')),
         'ARTIFACT_ID': config.get('artifacts', service_name),
         'EXTENSION': config.get('extension', 'war'),
         'CLASSIFIER': config.get('classifier', ''),
@@ -612,6 +612,10 @@ def build_service(service_name, service_config, dry_run=False, no_cache=False):
     # We DO NOT use --pull directly because it fails with our local builders.
     # Instead, we pull the external runtime base image if requested.
     if service_config.get('pull'):
+        java_version = service_config.get('java_version')
+        if not java_version:
+             print(f"   ❌ Error: java_version not defined for {service_name}. Cannot pull base image.")
+             sys.exit(1)
         base_image = f"eclipse-temurin:{java_version}-jre-jammy"
         print(f"   📡 Pulling external runtime base image: {base_image}...")
         try:
@@ -727,16 +731,21 @@ def main():
     
     for name, svc_conf in expanded_build_list:
         # Determine Java Version
-        if 'java_version' not in svc_conf or svc_conf['java_version'] == DEFAULT_JAVA_VERSION:
-             # Try to resolve dynamically if possible or if it was default
+        if 'java_version' not in svc_conf:
+             # Try to resolve dynamically
              if deps_utils and dependencies:
                  v = svc_conf.get('version', 'latest')
                  dyn = deps_utils.determine_java_version(name, v, dependencies)
-                 svc_conf['java_version'] = dyn
-                 # print(f"   ☕ Resolved Java Version for {name} ({v}): {dyn}")
-             
-             if 'java_version' not in svc_conf:
-                 svc_conf['java_version'] = DEFAULT_JAVA_VERSION
+                 if dyn:
+                     svc_conf['java_version'] = dyn
+                 else:
+                     print(f"   ❌ Error: Could not determine Java version for {name} ({v}) from dependencies.yaml")
+                     print(f"      Please specify it manually using --java-version=<ver> or in services-definition.yml")
+                     sys.exit(1)
+             else:
+                 print(f"   ❌ Error: Java version for {name} must be specified manually using --java-version=<ver>")
+                 print(f"      or resolved via dependencies.yaml (which is currently unavailable or missing deps_utils).")
+                 sys.exit(1)
 
         final_build_tasks.append((name, svc_conf))
 
