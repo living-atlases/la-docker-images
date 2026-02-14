@@ -121,13 +121,23 @@ def ensure_builders(registry, java_version, tool, force_rebuild=False):
     
     # Check if image exists locally
     try:
-        if not force_rebuild:
+        if not force_rebuild and not args.get('--pull'):
             subprocess.check_call(["docker", "image", "inspect", image_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             # print(f"   ✅ Builder image {image_name} already exists.")
             return
     except subprocess.CalledProcessError:
         pass # Not found or forced
         
+    # If using --pull, try to pull the builder first if it exists in the registry
+    if args.get('--pull'):
+        print(f"   📡 Attempting to pull builder image: {image_name}...")
+        try:
+            subprocess.check_call(["docker", "pull", image_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print(f"   ✅ Builder image {image_name} pulled successfully.")
+            return
+        except subprocess.CalledProcessError:
+             print(f"   ℹ️  Builder image {image_name} not found in registry. Will build locally.")
+
     print(f"   🔨 Building builder image: {image_name}...")
     
     builder_path = os.path.join(BUILDERS_DIR, tool)
@@ -226,6 +236,7 @@ def get_service_config(service_name, config, args):
     if args['--branch']: final_config['branch'] = args['--branch']
     if args['--commit']: final_config['commit'] = args['--commit']
     if args['--push']: final_config['push'] = True
+    if args['--pull']: final_config['pull'] = True
     
     return final_config
 
@@ -593,6 +604,9 @@ def build_service(service_name, service_config, dry_run=False, no_cache=False):
     
     if no_cache:
         cmd.append("--no-cache")
+        
+    if service_config.get('pull'):
+        cmd.append("--pull")
         
     print(f"   🔨 Building {image_name}...")
     try:
