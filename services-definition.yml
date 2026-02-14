@@ -154,7 +154,7 @@ services:
     classifier: exec
   ala-namematching-server:
     name: namematching
-    description: namematching webservice
+    description: ALA Name Matching Service
     build_tool: maven
     repository: https://github.com/AtlasOfLivingAustralia/ala-namematching-service
     artifacts: ala-namematching-server
@@ -164,9 +164,13 @@ services:
     classifier: exec
     extension: jar
     branch: master
+    java_version: 11
+    port: 9180
+    app_args: server /data/ala-namematching-server/config/config.yml
+    maven_profiles: ""
   ala-sensitive-data-server:
     name: sensitive-data-service
-    description: Web services for sensitive data evaluation
+    description: ALA Sensitive Data Service
     build_tool: maven
     repository: https://github.com/AtlasOfLivingAustralia/ala-sensitive-data-service
     artifacts: ala-sensitive-data-server
@@ -175,6 +179,10 @@ services:
     build_dir: ala-sensitive-data-server
     classifier: exec
     branch: master
+    java_version: 11
+    port: 9180
+    app_args: server /data/ala-sensitive-data-service/config/config.yml
+    maven_profiles: ""
   data-quality-filter-service:
     name: data-quality
     description: Data Quality Filter Service

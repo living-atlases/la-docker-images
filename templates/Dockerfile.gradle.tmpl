@@ -79,6 +79,8 @@ ARG BRANCH=${BRANCH}
 ARG BUILD_TOOL=gradle
 ARG BUILD_DIR=.
 
+WORKDIR /build/src
+
 RUN echo "🔍 Cloning repository..." && \
     echo "   Repo: ${REPO}"
 
@@ -129,6 +131,8 @@ ARG REPO=${REPO}
 ARG COMMIT=HEAD
 ARG BUILD_TOOL=gradle
 ARG BUILD_DIR=.
+
+WORKDIR /build/src
 
 RUN echo "🔍 Cloning repository..." && \
     echo "   Repo: ${REPO}"

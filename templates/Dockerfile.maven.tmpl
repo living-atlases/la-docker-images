@@ -32,6 +32,8 @@ ARG RUN_TOOL=java-jar
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ARG BUILD_DIR=.
+ARG MAVEN_PROFILES=""
+ARG APP_ARGS=""
 
 # ============================================
 # Stage 1: Base builder image
@@ -81,6 +83,8 @@ ARG BRANCH=${BRANCH}
 ARG BUILD_TOOL=maven
 ARG BUILD_DIR=.
 
+WORKDIR /build/src
+
 RUN echo "🔍 Cloning repository..." && \
     echo "   Repo: ${REPO}"
 
@@ -103,12 +107,12 @@ RUN --mount=type=cache,target=/root/.m2 \
     echo "📦 Installing module parent POM: ${BUILD_DIR}..." && \
     mvn -s /build/settings.xml install -N -DskipTests -U -f "${BUILD_DIR}/pom.xml" || true && \
     echo "🔨 Building module ${BUILD_DIR} from root..." && \
-    mvn -s /build/settings.xml clean package -DskipTests -P war -pl "${BUILD_DIR}" -am -U && \
+    mvn -s /build/settings.xml clean package -DskipTests ${MAVEN_PROFILES:+-P ${MAVEN_PROFILES}} -pl "${BUILD_DIR}" -am -U && \
     find "${BUILD_DIR}/target/" -maxdepth 1 -name "*.${EXTENSION}" -exec mv {} /build/artifact.${EXTENSION} \; || \
     find "${BUILD_DIR}/target/" -maxdepth 1 -name "*.jar" -exec mv {} /build/artifact.${EXTENSION} \; ; \
     else \
     echo "🔨 Building from root..." && \
-    mvn -s /build/settings.xml clean package -DskipTests -P war -U && \
+    mvn -s /build/settings.xml clean package -DskipTests ${MAVEN_PROFILES:+-P ${MAVEN_PROFILES}} -U && \
     find "target/" -maxdepth 1 -name "*.${EXTENSION}" -exec mv {} /build/artifact.${EXTENSION} \; || \
     find "target/" -maxdepth 1 -name "*.jar" -exec mv {} /build/artifact.${EXTENSION} \; ; \
     fi
@@ -125,6 +129,8 @@ ARG REPO=${REPO}
 ARG COMMIT=HEAD
 ARG BUILD_TOOL=maven
 ARG BUILD_DIR=.
+
+WORKDIR /build/src
 
 RUN echo "🔍 Cloning repository..." && \
     echo "   Repo: ${REPO}"
@@ -144,12 +150,12 @@ RUN echo "🔨 Building with ${BUILD_TOOL} in ${BUILD_DIR}..."
 RUN --mount=type=cache,target=/root/.m2 \
     if [ "${BUILD_DIR}" != "." ]; then \
     echo "🔨 Building module ${BUILD_DIR} from root..." && \
-    mvn -s /build/settings.xml clean package -DskipTests -P war -pl "${BUILD_DIR}" -am -U && \
+    mvn -s /build/settings.xml clean package -DskipTests ${MAVEN_PROFILES:+-P ${MAVEN_PROFILES}} -pl "${BUILD_DIR}" -am -U && \
     find "${BUILD_DIR}/target/" -maxdepth 1 -name "*.${EXTENSION}" -exec mv {} /build/artifact.${EXTENSION} \; || \
     find "${BUILD_DIR}/target/" -maxdepth 1 -name "*.jar" -exec mv {} /build/artifact.${EXTENSION} \; ; \
     else \
     echo "🔨 Building from root..." && \
-    mvn -s /build/settings.xml clean package -DskipTests -P war -U && \
+    mvn -s /build/settings.xml clean package -DskipTests ${MAVEN_PROFILES:+-P ${MAVEN_PROFILES}} -U && \
     find "target/" -maxdepth 1 -name "*.${EXTENSION}" -exec mv {} /build/artifact.${EXTENSION} \; || \
     find "target/" -maxdepth 1 -name "*.jar" -exec mv {} /build/artifact.${EXTENSION} \; ; \
     fi
@@ -184,6 +190,7 @@ LABEL org.opencontainers.image.source="${REPO}"
 ENV APP_ARTIFACT=${ARTIFACT_ID}
 ENV SERVICE_USER=${SERVICE_NAME}
 ENV EXTENSION=${EXTENSION}
+ENV APP_ARGS=${APP_ARGS}
 
 WORKDIR /opt/atlas/${APP_ARTIFACT}
 
@@ -220,7 +227,7 @@ USER ${SERVICE_USER}
 
 # Execute service
 # Use shell form to allow variable expansion
-CMD java ${JAVA_OPTS} -jar /opt/atlas/${APP_ARTIFACT}/app.${EXTENSION}
+CMD java ${JAVA_OPTS} -jar /opt/atlas/${APP_ARTIFACT}/app.${EXTENSION} ${APP_ARGS}
 
 ARG BUILD_DATE
 ARG VCS_REF
