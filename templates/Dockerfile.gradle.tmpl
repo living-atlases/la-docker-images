@@ -210,6 +210,15 @@ ENV LOG_DIR=${LOG_DIR}
 # Uses tomcat_java_opts if available, otherwise uses safe defaults
 ENV JAVA_OPTS=${JAVA_OPTS}
 
+# Create service user and data directories
+RUN groupadd -r ${SERVICE_USER} -g 1000 && \
+    useradd -r -g ${SERVICE_USER} -u 1000 -m ${SERVICE_USER} && \
+    mkdir -p /data/${APP_ARTIFACT}/config && \
+    mkdir -p /data/${APP_ARTIFACT}/data && \
+    chown -R ${SERVICE_USER}:${SERVICE_USER} /data/${APP_ARTIFACT} && \
+    chown ${SERVICE_USER}:${SERVICE_USER} /opt/atlas/${APP_ARTIFACT}/app.${EXTENSION} && \
+    chown -R ${SERVICE_USER}:${SERVICE_USER} /opt/atlas/${APP_ARTIFACT}
+
 # Create additional log directories for Tomcat-based applications
 RUN mkdir -p /var/log/tomcat10 && \
     chown -R ${SERVICE_USER}:${SERVICE_USER} /var/log/tomcat10
