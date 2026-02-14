@@ -1,3 +1,4 @@
+---
 services:
   collectory:
     name: collectory
@@ -76,10 +77,10 @@ services:
     artifacts: cas
     log_config_filename: log4j2.xml
     extra_params:
-    - key: cas.standalone.configurationDirectory
-      value: /data/cas/config
-    - key: ala.password.properties
-      value: /data/cas/config/pwe.properties
+      - key: cas.standalone.configurationDirectory
+        value: /data/cas/config
+      - key: ala.password.properties
+        value: /data/cas/config/pwe.properties
   userdetails:
     name: User Details
     description: ''
@@ -107,8 +108,8 @@ services:
     classifier: exec
     log_config_filename: log4j2.xml
     extra_params:
-    - key: cas.standalone.configurationDirectory
-      value: /data/cas-management/config/
+      - key: cas.standalone.configurationDirectory
+        value: /data/cas-management/config/
   spatial-hub:
     name: spatial
     description: spatial front-end
@@ -208,7 +209,7 @@ services:
   pdfgen:
     name: pdfgen
     description: Service for turning .docs into .pdfs (used by biocollect)
-    build_tool: maven
+    build_tool: gradle
     repository: https://github.com/AtlasOfLivingAustralia/pdf-service
     artifacts: pdfgen
     classifier: all
@@ -220,7 +221,7 @@ services:
     repository: https://github.com/AtlasOfLivingAustralia/ecodata
     artifacts: ecodata
     extra_params:
-    - key: java.io.tmpdir
-      value: /data/tmp
+      - key: java.io.tmpdir
+        value: /data/tmp
     classifier: exec
     extension: jar
