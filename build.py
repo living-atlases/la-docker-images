@@ -57,6 +57,7 @@ Options:
   # Actions
   --push                  Push images to registry after successful build.
   --dry-run               Generate Dockerfiles in build/ directory but do NOT build images.
+  --check                 Only check Nexus URLs and Java versions without building or generating files.
   --no-cache              Do not use Docker cache when building.
   --pull                  Always attempt to pull a newer version of the image.
   --update-metadata       Force update of Nexus metadata (ignore cache).
@@ -278,14 +279,13 @@ def check_nexus_url(service_name, config):
     
     try:
         req = urllib.request.Request(nexus_url, method='HEAD')
-        with urllib.request.urlopen(req) as response:
+        # Add a timeout to avoid hanging
+        with urllib.request.urlopen(req, timeout=10) as response:
             if response.status == 200:
                 return True, nexus_url
             else:
                 return False, nexus_url
-    except urllib.error.URLError as e:
-        return False, nexus_url
-    except Exception as e:
+    except (urllib.error.URLError, Exception):
         return False, nexus_url
 
 import hashlib
@@ -670,11 +670,30 @@ def main():
         services_to_build_names = list(config['services'].keys())
     elif args['--service']:
         services_to_build_names = args['--service']
+    elif args['--from-file']:
+        from_file = args['--from-file']
+        if not os.path.exists(from_file):
+             print(f"Error: File not found: {from_file}")
+             sys.exit(1)
+        with open(from_file, 'r') as f:
+            if from_file.endswith('.json'):
+                data = json.load(f)
+            else:
+                data = yaml.safe_load(f)
+            
+            # Expecting either a list of names or a dict with a 'services' list
+            if isinstance(data, list):
+                services_to_build_names = data
+            elif isinstance(data, dict) and 'services' in data:
+                services_to_build_names = data['services']
+            else:
+                print(f"Error: Invalid format in {from_file}. Expected list of services.")
+                sys.exit(1)
     else:
         services_to_build_names = []
         
     if not services_to_build_names:
-        print("No services selected to build.")
+        print("No services selected to build. Use --service, --all or --from-file.")
         sys.exit(0)
     
     # --- EXPANSION PHASE ---
@@ -788,6 +807,10 @@ def main():
         sys.exit(1)
         
     print("\n✅ All Nexus URLs validated. Proceeding...\n")
+
+    if args['--check']:
+        print("🏁 Check-only mode: Validation successful. Exiting.")
+        sys.exit(0)
 
     # --- BUILD PHASE ---
     for name, svc_conf in final_build_tasks:
