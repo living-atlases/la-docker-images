@@ -24,7 +24,8 @@
 # ============================================
 # GLOBAL BUILD ARGUMENTS
 # ============================================
-ARG BUILDER_IMAGE=gradle-builder:jdk${JAVA_VERSION}
+ARG REGISTRY=""
+ARG BUILDER_IMAGE=${REGISTRY}gradle-builder:jdk${JAVA_VERSION}
 ARG BUILD_METHOD=nexus
 ARG BUILD_TOOL=gradle
 ARG RUN_TOOL=java-jar

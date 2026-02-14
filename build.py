@@ -60,6 +60,7 @@ Options:
   --no-cache              Do not use Docker cache when building.
   --pull                  Always attempt to pull a newer version of the image.
   --update-metadata       Force update of Nexus metadata (ignore cache).
+  --build-builders        Force rebuilding of base builder images (gradle/maven).
   
   # Configuration Files
   --config=<file>         Path to local build config overrides [default: build-config.yml].
@@ -106,6 +107,52 @@ DEFAULT_JAVA_VERSION = "11"
 BUILD_DIR_BASE = os.path.join(SCRIPT_DIR, "build")
 TEMPLATES_DIR = os.path.join(SCRIPT_DIR, "templates")
 SERVICES_DIR = os.path.join(SCRIPT_DIR, "services")
+BUILDERS_DIR = os.path.join(SCRIPT_DIR, "builders")
+
+def ensure_builders(registry, java_version, tool, force_rebuild=False):
+    """
+    Ensure the required builder image exists locally.
+    If not, build it from the builders/ directory.
+    """
+    if not registry.endswith('/'):
+        registry += '/'
+        
+    image_name = f"{registry}{tool}-builder:jdk{java_version}"
+    
+    # Check if image exists locally
+    try:
+        if not force_rebuild:
+            subprocess.check_call(["docker", "image", "inspect", image_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # print(f"   ✅ Builder image {image_name} already exists.")
+            return
+    except subprocess.CalledProcessError:
+        pass # Not found or forced
+        
+    print(f"   🔨 Building builder image: {image_name}...")
+    
+    builder_path = os.path.join(BUILDERS_DIR, tool)
+    if not os.path.exists(builder_path):
+        print(f"   ⚠️  Warning: Builder path {builder_path} not found. Cannot build {image_name}.")
+        return
+
+    cmd = [
+        "docker", "build",
+        "-t", image_name,
+        "--build-arg", f"JDK_VERSION={java_version}",
+        "."
+    ]
+    
+    # Specific versions for builders if needed
+    if tool == 'gradle':
+        gradle_version = "8" if str(java_version) == "21" else "7"
+        cmd.extend(["--build-arg", f"GRADLE_VERSION={gradle_version}"])
+    
+    try:
+        subprocess.check_call(cmd, cwd=builder_path)
+        print(f"   ✅ Builder image {image_name} built successfully.")
+    except subprocess.CalledProcessError as e:
+        print(f"   ❌ Failed to build builder image {image_name}")
+        sys.exit(1)
 
 def load_config(config_file, defs_file):
     """Load and merge configuration"""
@@ -470,7 +517,8 @@ def generate_dockerfile(service_name, config, build_path):
         'LOG_CONFIG_FILENAME': config.get('log_config_filename', ''),
         'LOGGING_CONFIG': "", 
         'JAVA_OPTS': java_opts.strip(),
-        'PORT': str(config.get('port', 8080))
+        'PORT': str(config.get('port', 8080)),
+        'REGISTRY': config.get('registry', DEFAULT_REGISTRY) + ('/' if config.get('registry') and not config.get('registry').endswith('/') else '')
     }
     
     if config.get('log_config_filename'):
@@ -708,6 +756,16 @@ def main():
 
     # --- BUILD PHASE ---
     for name, svc_conf in final_build_tasks:
+        # Ensure builder exists before building the service
+        registry = svc_conf.get('registry', DEFAULT_REGISTRY)
+        java_version = svc_conf.get('java_version', DEFAULT_JAVA_VERSION)
+        tool = svc_conf.get('build_tool', 'gradle')
+        
+        # We only need builders for repo-branch/repo-tag methods, 
+        # but the templates use them as base stages anyway for Nexus/URL too
+        # to have a consistent build environment (scripts, etc)
+        ensure_builders(registry, java_version, tool, args.get('--build-builders'))
+        
         build_service(name, svc_conf, args['--dry-run'], args['--no-cache'])
 
 if __name__ == '__main__':

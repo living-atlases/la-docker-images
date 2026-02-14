@@ -24,7 +24,8 @@
 # ============================================
 # GLOBAL BUILD ARGUMENTS
 # ============================================
-ARG BUILDER_IMAGE=maven-builder:jdk${JAVA_VERSION}
+ARG REGISTRY=""
+ARG BUILDER_IMAGE=${REGISTRY}maven-builder:jdk${JAVA_VERSION}
 ARG BUILD_METHOD=nexus
 ARG BUILD_TOOL=maven
 ARG RUN_TOOL=java-jar
