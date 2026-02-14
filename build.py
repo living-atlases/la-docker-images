@@ -59,6 +59,7 @@ Options:
   --dry-run               Generate Dockerfiles in build/ directory but do NOT build images.
   --no-cache              Do not use Docker cache when building.
   --pull                  Always attempt to pull a newer version of the image.
+  --update-metadata       Force update of Nexus metadata (ignore cache).
   
   # Configuration Files
   --config=<file>         Path to local build config overrides [default: build-config.yml].
@@ -218,40 +219,112 @@ def check_nexus_url(service_name, config):
     except Exception as e:
         return False, nexus_url
 
-def get_nexus_versions(service_name, config, n=1):
+import hashlib
+import time
+from pathlib import Path
+
+# Metadata Cache Configuration
+METADATA_CACHE_DIR = Path.home() / ".cache" / "la-docker-images" / "metadata"
+CACHE_DURATION_SECONDS = 24 * 60 * 60  # 24 hours
+
+def get_cached_metadata(url):
+    """
+    Retrieve metadata from cache if valid.
+    """
+    if not METADATA_CACHE_DIR.exists():
+        return None
+
+    # Generate filename from URL hash
+    filename = hashlib.md5(url.encode('utf-8')).hexdigest() + ".xml"
+    cache_file = METADATA_CACHE_DIR / filename
+    
+    if not cache_file.exists():
+        return None
+
+    # Check file age
+    file_age = time.time() - cache_file.stat().st_mtime
+    if file_age > CACHE_DURATION_SECONDS:
+        return None
+
+    try:
+        with open(cache_file, 'r') as f:
+            # Check if file is empty
+            content = f.read()
+            if not content:
+                 return None
+            return content
+    except Exception as e:
+        print(f"   ⚠️  Warning: Could not load cache: {e}")
+        return None
+
+def save_cached_metadata(url, content):
+    """
+    Save metadata to cache.
+    """
+    try:
+        METADATA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        
+        # Generate filename from URL hash
+        filename = hashlib.md5(url.encode('utf-8')).hexdigest() + ".xml"
+        cache_file = METADATA_CACHE_DIR / filename
+        
+        with open(cache_file, 'w') as f:
+            f.write(content)
+    except Exception as e:
+        print(f"   ⚠️  Warning: Could not save to cache: {e}")
+
+def get_nexus_versions(service_name, config, n=1, update_metadata=False):
     """Fetch last N versions from Nexus metadata"""
     artifact = config.get('artifacts', service_name)
     # Default to releases for metadata search
     nexus_base = "https://nexus.ala.org.au/repository/releases"
     url = f"{nexus_base}/au/org/ala/{artifact}/maven-metadata.xml"
     
-    print(f"   🔎 Fetching metadata for {service_name}: {url}")
+    xml_content = None
+    from_cache = False
+    
+    if not update_metadata:
+        xml_content = get_cached_metadata(url)
+        if xml_content:
+             from_cache = True
+             # print(f"   📦 Using cached metadata for {service_name}")
+
+    if not xml_content:
+        print(f"   🔎 Fetching metadata for {service_name}: {url}")
+        try:
+            with urllib.request.urlopen(url) as response:
+                if response.status != 200:
+                    print(f"   ⚠️  Failed to fetch metadata for {service_name}")
+                    return []
+                xml_content = response.read().decode('utf-8')
+                save_cached_metadata(url, xml_content)
+        except Exception as e:
+             print(f"   ⚠️  Error fetching metadata for {service_name}: {e}")
+             return []
+    else:
+        print(f"   📦 Using cached metadata for {service_name}")
+
     try:
-        with urllib.request.urlopen(url) as response:
-            if response.status != 200:
-                print(f"   ⚠️  Failed to fetch metadata for {service_name}")
-                return []
-            tree = ET.parse(response)
-            root = tree.getroot()
-            # <versioning><versions><version>...</version></versions></versioning>
-            versions = [v.text for v in root.findall(".//version")]
-            
-            # Filter out snapshots if we are looking for releases
-            # (Though metadata from releases repo shouldn't have them usually)
-            
-            # Sort versions
-            try:
-                if deps_utils:
-                    versions.sort(key=lambda v: deps_utils.pkg_version.parse(v))
-                else:
-                    versions.sort()
-            except Exception:
+        root = ET.fromstring(xml_content)
+        # <versioning><versions><version>...</version></versions></versioning>
+        versions = [v.text for v in root.findall(".//version")]
+        
+        # Filter out snapshots if we are looking for releases
+        # (Though metadata from releases repo shouldn't have them usually)
+        
+        # Sort versions
+        try:
+            if deps_utils:
+                versions.sort(key=lambda v: deps_utils.pkg_version.parse(v))
+            else:
                 versions.sort()
-                
-            return versions[-n:]
+        except Exception:
+            versions.sort()
+            
+        return versions[-n:]
             
     except Exception as e:
-        print(f"   ⚠️  Error fetching metadata for {service_name}: {e}")
+        print(f"   ⚠️  Error parsing metadata for {service_name}: {e}")
         return []
 
 def generate_dockerfile(service_name, config, build_path):
@@ -452,7 +525,8 @@ def main():
         # 2. Version is 'latest' (meaning user didn't specify a specific version tag)
         if is_nexus and version == 'latest':
             n_tags = int(args.get('--n-tags', 1))
-            versions = get_nexus_versions(name, svc_conf, n_tags)
+            update_metadata = args.get('--update-metadata', False)
+            versions = get_nexus_versions(name, svc_conf, n_tags, update_metadata)
             
             if not versions:
                 print(f"   ⚠️  No versions found for {name} in Nexus metadata. Keeping 'latest' (will likely fail).")
