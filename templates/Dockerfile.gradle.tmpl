@@ -184,7 +184,7 @@ FROM builder-${BUILD_METHOD} AS final-builder
 # ============================================
 # Stage 7: Final Runtime - Java JAR with setup
 # ============================================
-FROM eclipse-temurin:${JAVA_VERSION}-jre-jammy
+FROM ${JAVA_BASE_IMAGE}
 
 ARG SERVICE_USER=${SERVICE_NAME}
 ARG APP_ARTIFACT=${ARTIFACT_ID}
