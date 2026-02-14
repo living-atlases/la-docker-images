@@ -1,0 +1,218 @@
+services:
+  collectory:
+    name: collectory
+    description: metadata of biodiversity collections
+    build_tool: gradle
+    repository: https://github.com/AtlasOfLivingAustralia/collectory/
+    artifacts: collectory
+    log_config_filename: logback.xml
+  ala-hub:
+    name: records
+    description: occurrences search frontend (aka biocache-hub)
+    build_tool: gradle
+    repository: https://github.com/AtlasOfLivingAustralia/biocache-hubs
+    artifacts: ala-hub
+    log_config_filename: logback.xml
+  biocache-service:
+    name: records-ws
+    description: occurrences web service (aka biocache-service)
+    build_tool: gradle
+    repository: https://github.com/AtlasOfLivingAustralia/biocache-service
+    artifacts: biocache-service
+    log_config_filename: log4j.xml
+    classifier: exec
+  ala-bie-hub:
+    name: species
+    description: species search frontend
+    build_tool: gradle
+    repository: https://github.com/AtlasOfLivingAustralia/ala-bie-hub
+    artifacts: ala-bie-hub
+    log_config_filename: logback.xml
+  bie-index:
+    name: species-ws
+    description: species web service
+    build_tool: gradle
+    repository: https://github.com/AtlasOfLivingAustralia/bie-index
+    artifacts: bie-index
+    log_config_filename: logback.xml
+  image-service:
+    name: images
+    description: images service
+    build_tool: gradle
+    repository: https://github.com/AtlasOfLivingAustralia/image-service
+    artifacts: image-service
+    log_config_filename: logback.groovy
+    classifier: exec
+    extension: jar
+    log_dir: /var/log/atlas/image-service
+  specieslist-webapp:
+    name: species-lists
+    description: user provided species lists
+    build_tool: gradle
+    repository: https://github.com/AtlasOfLivingAustralia/specieslist-webapp
+    artifacts: specieslist-webapp
+    log_config_filename: logback.xml
+  regions:
+    name: regions
+    description: regional data frontend
+    build_tool: gradle
+    repository: https://github.com/AtlasOfLivingAustralia/regions
+    artifacts: regions
+    log_config_filename: logback.xml
+  logger-service:
+    name: logger
+    description: event logging (downloads stats, etc)
+    build_tool: gradle
+    repository: https://github.com/AtlasOfLivingAustralia/logger-service
+    artifacts: logger-service
+    log_config_filename: logback.xml
+    classifier: exec
+    extension: jar
+  cas:
+    name: auth
+    description: CAS authentication system
+    build_tool: maven
+    repository: https://github.com/AtlasOfLivingAustralia/ala-cas-5
+    artifacts: cas
+    log_config_filename: log4j2.xml
+    extra_params:
+    - key: cas.standalone.configurationDirectory
+      value: /data/cas/config
+    - key: ala.password.properties
+      value: /data/cas/config/pwe.properties
+  userdetails:
+    name: User Details
+    description: ''
+    build_tool: gradle
+    repository: https://github.com/AtlasOfLivingAustralia/userdetails
+    artifacts: userdetails
+    log_config_filename: logback.xml
+    classifier: exec
+    log_dir: /var/log/atlas/userdetails
+  apikey:
+    name: API keys
+    description: ''
+    build_tool: gradle
+    repository: https://github.com/AtlasOfLivingAustralia/apikey
+    artifacts: apikey
+    log_config_filename: logback.xml
+    classifier: exec
+    log_dir: /var/log/atlas/apikey
+  cas-management:
+    name: CAS Management
+    description: ''
+    build_tool: gradle
+    repository: https://github.com/AtlasOfLivingAustralia/ala-cas-5-services
+    artifacts: cas-management
+    classifier: exec
+    log_config_filename: log4j2.xml
+    extra_params:
+    - key: cas.standalone.configurationDirectory
+      value: /data/cas-management/config/
+  spatial-hub:
+    name: spatial
+    description: spatial front-end
+    build_tool: gradle
+    repository: https://github.com/AtlasOfLivingAustralia/spatial-hub
+    artifacts: spatial-hub
+    log_config_filename: log4j.properties
+  spatial-service:
+    name: Spatial Webservice
+    description: ''
+    build_tool: gradle
+    repository: https://github.com/AtlasOfLivingAustralia/spatial-service
+    artifacts: spatial-service
+    log_config_filename: log4j.properties
+  dashboard:
+    name: dashboard
+    description: Dashboard with portal stats
+    build_tool: gradle
+    repository: https://github.com/AtlasOfLivingAustralia/dashboard
+    artifacts: dashboard
+    log_config_filename: logback.xml
+  sds-webapp2:
+    name: sds
+    description: Sensitive Data Service (SDS)
+    build_tool: gradle
+    repository: https://github.com/AtlasOfLivingAustralia/sds
+    artifacts: sds-webapp2
+    log_config_filename: logback.xml
+  alerts:
+    name: alerts
+    description: "users can subscribe to notifications about new occurrences regions,\u2026"
+    build_tool: gradle
+    repository: https://github.com/AtlasOfLivingAustralia/alerts
+    artifacts: alerts
+    log_config_filename: logback.xml
+  doi-service:
+    name: doi
+    description: mainly used for generating DOIs of user downloads
+    build_tool: gradle
+    repository: https://github.com/AtlasOfLivingAustralia/doi-service
+    artifacts: doi-service
+    log_config_filename: logback.groovy
+    classifier: exec
+  ala-namematching-server:
+    name: namematching
+    description: namematching webservice
+    build_tool: maven
+    repository: https://github.com/AtlasOfLivingAustralia/ala-namematching-service
+    artifacts: ala-namematching-server
+    log_config_filename: logback.xml
+    build_method: repo-branch
+    build_dir: server
+    classifier: exec
+    branch: master
+  ala-sensitive-data-server:
+    name: sensitive-data-service
+    description: Web services for sensitive data evaluation
+    build_tool: maven
+    repository: https://github.com/AtlasOfLivingAustralia/ala-sensitive-data-service
+    artifacts: ala-sensitive-data-server
+    log_config_filename: logback.xml
+    build_method: repo-branch
+    build_dir: ala-sensitive-data-server
+    classifier: exec
+    branch: master
+  data-quality-filter-service:
+    name: data-quality
+    description: Data Quality Filter Service
+    build_tool: gradle
+    repository: ''
+    artifacts: data-quality-filter-service
+    log_config_filename: logback.xml
+  la-pipelines:
+    name: pipelines
+    description: Pipelines for data processing and indexing of biodiversity data
+    build_tool: maven
+    repository: https://github.com/gbif/pipelines.git
+    artifacts: la-pipelines
+    build_dir: livingatlas
+  biocollect:
+    name: biocollect
+    description: advanced data collection tool for biodiversity science
+    build_tool: gradle
+    repository: ''
+    artifacts: biocollect
+    log_config_filename: logback.xml
+    classifier: exec
+    extension: jar
+  pdfgen:
+    name: pdfgen
+    description: Service for turning .docs into .pdfs (used by biocollect)
+    build_tool: maven
+    repository: ''
+    artifacts: pdfgen
+    classifier: all
+    extension: jar
+  ecodata:
+    name: ecodata-reporting
+    description: provides reporting service for ecodata
+    build_tool: maven
+    repository: ''
+    artifacts: ecodata
+    extra_params:
+    - key: java.io.tmpdir
+      value: /data/tmp
+    classifier: exec
+    extension: jar

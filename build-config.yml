@@ -1,0 +1,52 @@
+services:
+  # ---------------------------------------------------------------------------
+  # EXAMPLE 1: Build from Source Code (Git Branch)
+  # ---------------------------------------------------------------------------
+  # This method clones the source code repository and builds the artifact locally using
+  # the project's build tool (e.g., Grails, Maven, Gradle).
+  # Use 'repo-branch' when you want to build unreleased changes from a development branch.
+  # collectory:
+  #   branch: my-feature-branch
+  #   build_method: repo-branch
+
+  # ---------------------------------------------------------------------------
+  # OTHER EXAMPLES (Uncomment to use)
+  # ---------------------------------------------------------------------------
+
+  # EXAMPLE 2: Build from Source Code (Git Tag)
+  # Similar to repo-branch, but checks out a specific tag before building and forces a java version.
+  # ala-hub:
+  #   build_method: repo-tag
+  #   version: v1.2.0
+  #   java_version: 11
+
+  # EXAMPLE 3: Download from Nexus (Default)
+  # This is the default method. It downloads a pre-built artifact (WAR/JAR) from the
+  # configured Nexus repository. No source code compilation happens locally.
+  # images-service:
+  #   build_method: nexus
+  #   version: 2.3.1
+  #   java_base_image: eclipse-temurin:11-jdk-focal
+  #   push: true
+
+  # EXAMPLE 4: Download from Direct URL
+  # 'build_method: url' downloads a PRE-BUILT artifact (WAR/JAR) directly from the specified URL.
+  # DIFFERENCE FROM 'repo-branch':
+  # - 'url': We do NOT build the code. We simply download a finished .war/.jar file and wrap it in Docker.
+  # - 'repo-branch': We clone the source code and compile it ourselves.
+  # species-list:
+  #   build_method: url
+  #   # URL to the pre-built artifact (e.g., from a CI server or release page)
+  #   repository: https://example.com/downloads/species-list-1.0.war
+  #   # Define artifact details to constructing the path inside the container
+  #   artifacts: species-list-service
+  #   extension: war
+
+  # EXAMPLE 5: Custom Configuration
+  # logger-service:
+  #   extra_params:
+  #     - key: "org.gradle.daemon"
+  #       value: "false"
+  #   port: 8082
+  #   log_dir: /var/log/atlas
+  #   log_config_filename: log4j.properties
