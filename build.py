@@ -603,6 +603,8 @@ def build_service(service_name, service_config, dry_run=False, no_cache=False):
     if dry_run:
         print(f"   ✅ Dockerfile generated in {build_path}")
         print(f"   [Dry Run] Would build: {image_name}")
+        for tag in service_config.get('additional_tags', []):
+            print(f"   [Dry Run] Would tag: {registry}/{service_name}:{tag}")
         return
 
     # Docker Build Command
@@ -640,6 +642,15 @@ def build_service(service_name, service_config, dry_run=False, no_cache=False):
             print(f"   📤 Pushing {image_name}...")
             subprocess.check_call(["docker", "push", image_name])
             print("   ✅ Push successful")
+            
+        # Additional Tags (e.g. latest)
+        for tag in service_config.get('additional_tags', []):
+            tag_name = f"{registry}/{service_name}:{tag}"
+            print(f"   🏷️  Tagging {tag_name}...")
+            subprocess.check_call(["docker", "tag", image_name, tag_name])
+            if service_config['push']:
+                print(f"   📤 Pushing {tag_name}...")
+                subprocess.check_call(["docker", "push", tag_name])
             
     except subprocess.CalledProcessError as e:
         sys.exit(1)
@@ -723,9 +734,12 @@ def main():
                 expanded_build_list.append((name, svc_conf))
             else:
                 print(f"   ✨ Resolved versions for {name}: {versions}")
-                for v in versions:
+                for i, v in enumerate(versions):
                     v_conf = svc_conf.copy()
                     v_conf['version'] = v
+                    # Tag the last one as latest
+                    if i == len(versions) - 1:
+                        v_conf['additional_tags'] = ['latest']
                     expanded_build_list.append((name, v_conf))
         
         elif svc_conf.get('build_method') == 'repo-tags':
@@ -737,12 +751,15 @@ def main():
                  print(f"   ⚠️  No tags found for {name}. Skipping.")
              else:
                  print(f"   ✨ Resolved tags for {name}: {[t[0] for t in tags_info]}")
-                 for version, original_tag in tags_info:
+                 for i, (version, original_tag) in enumerate(tags_info):
                      v_conf = svc_conf.copy()
                      v_conf['version'] = version
                      # METHOD MAPPING: repo-tags -> repo-branch with tag as branch
                      v_conf['build_method'] = 'repo-branch'
                      v_conf['branch'] = original_tag
+                     # Tag the last one as latest
+                     if i == len(tags_info) - 1:
+                           v_conf['additional_tags'] = ['latest']
                      expanded_build_list.append((name, v_conf))
 
         else:
