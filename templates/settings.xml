@@ -5,9 +5,31 @@
 	<mirrors>
 		<mirror>
 			<id>gbif-public-mirror</id>
-			<mirrorOf>*,!gbif-all,!gbif-mirror,!gbif-thirdparty</mirrorOf>
+			<mirrorOf>*,!gbif-all,!gbif-mirror,!gbif-thirdparty,!ala-repository</mirrorOf>
 			<name>GBIF mirror of public repositories</name>
 			<url>https://repository.gbif.org/content/groups/public/</url>
 		</mirror>
 	</mirrors>
+
+	<profiles>
+		<profile>
+			<id>ala-repo</id>
+			<activation>
+				<activeByDefault>true</activeByDefault>
+			</activation>
+			<repositories>
+				<repository>
+					<id>ala-repository</id>
+					<name>ALA Maven Repository</name>
+					<url>https://nexus.ala.org.au/content/groups/public/</url>
+					<releases>
+						<enabled>true</enabled>
+					</releases>
+					<snapshots>
+						<enabled>false</enabled>
+					</snapshots>
+				</repository>
+			</repositories>
+		</profile>
+	</profiles>
 </settings>

@@ -539,7 +539,9 @@ def generate_dockerfile(service_name, config, build_path):
         'JAVA_OPTS': java_opts.strip(),
         'PORT': str(config.get('port', 8080)),
         'REGISTRY': config.get('registry', DEFAULT_REGISTRY) + ('/' if config.get('registry') and not config.get('registry').endswith('/') else ''),
-        'JAVA_BASE_IMAGE': config.get('java_base_image', f"eclipse-temurin:{config.get('java_version')}-jre-jammy")
+        'JAVA_BASE_IMAGE': config.get('java_base_image', f"eclipse-temurin:{config.get('java_version')}-jre-jammy"),
+        'APP_ARGS': config.get('app_args', ''),
+        'MAVEN_PROFILES': config.get('maven_profiles', '')
     }
     
     if config.get('log_config_filename'):
