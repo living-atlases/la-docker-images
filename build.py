@@ -541,7 +541,12 @@ def generate_dockerfile(service_name, config, build_path):
         'REGISTRY': config.get('registry', DEFAULT_REGISTRY) + ('/' if config.get('registry') and not config.get('registry').endswith('/') else ''),
         'JAVA_BASE_IMAGE': config.get('java_base_image', f"eclipse-temurin:{config.get('java_version')}-jre-jammy"),
         'APP_ARGS': config.get('app_args', ''),
-        'MAVEN_PROFILES': config.get('maven_profiles', '')
+        'MAVEN_PROFILES': config.get('maven_profiles', ''),
+        'BUILD_DIR': config.get('build_dir', '.'),
+        'COMMIT': config.get('commit', 'HEAD'),
+        'BUILD_TOOL': config.get('build_tool', 'gradle'),
+        'BUILD_METHOD': config.get('build_method', 'nexus'),
+        'SERVICE_USER': config.get('name', service_name)
     }
     
     if config.get('log_config_filename'):
@@ -613,6 +618,8 @@ def build_service(service_name, service_config, dry_run=False, no_cache=False):
         "-t", image_name,
         "--build-arg", f"BUILD_METHOD={service_config['build_method']}",
         "--build-arg", f"VERSION={version}",
+        "--build-arg", f"BUILD_DIR={service_config.get('build_dir', '.')}",
+        "--build-arg", f"COMMIT={service_config.get('commit', 'HEAD')}",
         "." # Context is build_path
     ]
     
