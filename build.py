@@ -75,6 +75,7 @@ Options:
 import os
 import sys
 import yaml
+from packaging import version as pkg_version
 import json
 import shutil
 import subprocess
@@ -97,6 +98,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 # Constants
 # Constants
+import hashlib
 DEFAULT_REGISTRY = "hub.docker.com/u/livingatlases"
 DEFAULT_DEPENDENCIES_URL = "https://raw.githubusercontent.com/living-atlases/la-toolkit-backend/master/assets/dependencies.yaml"
 # Defaults if not found in dependencies
@@ -225,6 +227,7 @@ from pathlib import Path
 
 # Metadata Cache Configuration
 METADATA_CACHE_DIR = Path.home() / ".cache" / "la-docker-images" / "metadata"
+TAGS_CACHE_DIR = Path.home() / ".cache" / "la-docker-images" / "tags"
 CACHE_DURATION_SECONDS = 24 * 60 * 60  # 24 hours
 
 def get_cached_metadata(url):
@@ -326,6 +329,93 @@ def get_nexus_versions(service_name, config, n=1, update_metadata=False):
     except Exception as e:
         print(f"   ⚠️  Error parsing metadata for {service_name}: {e}")
         return []
+
+def get_github_tags(service_name, config, n=1):
+    """
+    Fetch tags from GitHub API
+    Wrapper to get Clean Version -> Original Tag mapping
+    """
+    repo_url = config.get('repository', '')
+    if 'github.com' not in repo_url:
+        print(f"   ⚠️  Not a GitHub URL: {repo_url}")
+        return []
+
+    # Extract clean owner/repo
+    # e.g. https://github.com/gbif/pipelines.git -> gbif/pipelines
+    try:
+        path = repo_url.split('github.com/')[-1]
+        if path.endswith('.git'):
+            path = path[:-4]
+        owner_repo = path.strip('/')
+    except IndexError:
+         print(f"   ⚠️  Could not parse GitHub URL: {repo_url}")
+         return []
+
+    api_url = f"https://api.github.com/repos/{owner_repo}/tags"
+    
+    # Check cache
+    json_content = None
+    cache_file = TAGS_CACHE_DIR / (hashlib.md5(api_url.encode('utf-8')).hexdigest() + ".json")
+    
+    if TAGS_CACHE_DIR.exists() and cache_file.exists():
+        file_age = time.time() - cache_file.stat().st_mtime
+        if file_age <= CACHE_DURATION_SECONDS:
+             try:
+                 with open(cache_file, 'r') as f:
+                     json_content = json.load(f)
+                 # print(f"   📦 Using cached tags for {service_name}")
+             except Exception:
+                 pass
+
+    if not json_content:
+        print(f"   🔎 Fetching tags from GitHub for {service_name}: {api_url}")
+        try:
+            req = urllib.request.Request(api_url)
+            # Add User-Agent to avoid generic blocking
+            req.add_header('User-Agent', 'python-urllib')
+            with urllib.request.urlopen(req) as response:
+                if response.status == 200:
+                    data = response.read()
+                    json_content = json.loads(data)
+                    
+                    # Save to cache
+                    TAGS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+                    with open(cache_file, 'w') as f:
+                        f.write(data.decode('utf-8')) # Save raw string
+                else:
+                    print(f"   ⚠️  Failed to fetch tags: HTTP {response.status}")
+                    return []
+        except Exception as e:
+            print(f"   ⚠️  Error fetching GitHub tags: {e}")
+            return []
+
+    if not json_content:
+        return []
+
+    # Process tags
+    # Return list of (clean_version, original_tag)
+    results = []
+    
+    for item in json_content:
+        tag_name = item.get('name')
+        if not tag_name: continue
+        
+        clean_version = tag_name
+        
+        # Specific logic for pipelines
+        if tag_name.startswith('pipelines-parent-'):
+            clean_version = tag_name.replace('pipelines-parent-', '')
+            
+        results.append((clean_version, tag_name))
+        
+    # Sort
+    # Try semver sort
+    try:
+        results.sort(key=lambda x: pkg_version.parse(x[0]))
+    except Exception:
+        results.sort(key=lambda x: x[0])
+        
+    return results[-n:]
 
 def generate_dockerfile(service_name, config, build_path):
     """Generate Dockerfile from template"""
@@ -537,6 +627,24 @@ def main():
                     v_conf = svc_conf.copy()
                     v_conf['version'] = v
                     expanded_build_list.append((name, v_conf))
+        
+        elif svc_conf.get('build_method') == 'repo-tags':
+             n_tags = int(args.get('--n-tags', 1))
+             # Fetch tags
+             tags_info = get_github_tags(name, svc_conf, n_tags)
+             
+             if not tags_info:
+                 print(f"   ⚠️  No tags found for {name}. Skipping.")
+             else:
+                 print(f"   ✨ Resolved tags for {name}: {[t[0] for t in tags_info]}")
+                 for version, original_tag in tags_info:
+                     v_conf = svc_conf.copy()
+                     v_conf['version'] = version
+                     # METHOD MAPPING: repo-tags -> repo-branch with tag as branch
+                     v_conf['build_method'] = 'repo-branch'
+                     v_conf['branch'] = original_tag
+                     expanded_build_list.append((name, v_conf))
+
         else:
             # Explicit version or not Nexus
             expanded_build_list.append((name, svc_conf))

@@ -3,14 +3,14 @@ ARG JAVA_VERSION=17
 ARG BUILDER_IMAGE=maven-builder:jdk${JAVA_VERSION}
 FROM ${BUILDER_IMAGE} AS builder
 
-ARG BRANCH=dev
-ARG VERSION=dev
+ARG BRANCH=${BRANCH}
+ARG VERSION=${VERSION}
 ARG COMMIT=HEAD
-ARG SOURCE=https://github.com/gbif/pipelines.git
+ARG REPO=${REPO}
 ARG SOURCE_DATE_EPOCH
 
 WORKDIR /app
-RUN git clone --branch ${BRANCH} ${SOURCE} . && \
+RUN git clone --branch ${BRANCH} ${REPO} . && \
   if [ "${COMMIT}" != "HEAD" ]; then git checkout ${COMMIT}; fi
 
 RUN --mount=type=cache,target=/root/.m2 \

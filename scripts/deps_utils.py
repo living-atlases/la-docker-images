@@ -19,7 +19,8 @@ NAME_MAPPING = {
     'doi-service': 'doi',
     'ala-namematching-server': 'namematching',
     'ala-sensitive-data-server': 'sensitive-data',
-    'data-quality-filter-service': 'data-quality'
+    'data-quality-filter-service': 'data-quality',
+    'la-pipelines': 'pipelines'
 }
 
 CACHE_DIR = Path.home() / ".cache" / "la-docker-images"
