@@ -114,6 +114,9 @@ def ensure_builders(registry, java_version, tool, force_rebuild=False, pull=Fals
     If not, build it from the builders/ directory.
     Note: Builders are kept LOCAL-ONLY and not prefixed with registry.
     """
+    if str(java_version).lower() == 'none':
+        return
+
     image_name = f"{tool}-builder:jdk{java_version}"
     
     # Check if image exists locally
@@ -539,7 +542,7 @@ def generate_dockerfile(service_name, config, build_path):
         'JAVA_OPTS': java_opts.strip(),
         'PORT': str(config.get('port', 8080)),
         'REGISTRY': config.get('registry', DEFAULT_REGISTRY) + ('/' if config.get('registry') and not config.get('registry').endswith('/') else ''),
-        'JAVA_BASE_IMAGE': config.get('java_base_image', f"eclipse-temurin:{config.get('java_version')}-jre-jammy"),
+        'JAVA_BASE_IMAGE': config.get('java_base_image', f"eclipse-temurin:{config.get('java_version')}-jre-jammy") if str(config.get('java_version')).lower() != 'none' else "",
         'APP_ARGS': config.get('app_args', ''),
         'MAVEN_PROFILES': config.get('maven_profiles', ''),
         'BUILD_DIR': config.get('build_dir', '.'),
@@ -633,6 +636,8 @@ def build_service(service_name, service_config, dry_run=False, no_cache=False):
         if not java_version:
              print(f"   ❌ Error: java_version not defined for {service_name}. Cannot pull base image.")
              sys.exit(1)
+        if str(java_version).lower() == 'none':
+             return
         base_image = f"eclipse-temurin:{java_version}-jre-jammy"
         print(f"   📡 Pulling external runtime base image: {base_image}...")
         try:

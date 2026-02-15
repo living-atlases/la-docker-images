@@ -229,3 +229,11 @@ services:
         value: /data/tmp
     classifier: exec
     extension: jar
+  i18n:
+    name: i18n
+    description: Living Atlas i18n translations package
+    build_tool: custom
+    build_method: debian-package
+    repository: https://apt.gbif.es/
+    version: unstable
+    java_version: none
