@@ -6,11 +6,13 @@ Build repository for Living Atlas Docker images.
 
 ## Structure
 
-- `services-definition.yml`: Metadata for all services.
+- `services-definition.yml`: Metadata and default configuration for all services.
 - `templates/`: Generic Dockerfile templates (Gradle, Maven).
-- `services/`: Service-specific overrides (e.g. `la-pipelines`).
-- `scripts/`: Build automation scripts.
-- `build.py`: Main CLI tool.
+- `services/`: Service-specific overrides and Custom Dockerfiles.
+- `builders/`: Dockerfiles for base build images (Maven/Gradle with specific JDKs).
+- `scripts/`: Automation utilities (Java version resolution, Jenkins synchronization).
+- `build.py`: Main CLI tool for building and publishing images.
+- `Jenkinsfile`: CI/CD pipeline definition.
 
 ## Setup
 
@@ -34,12 +36,24 @@ Use the `build.py` script to generate Dockerfiles and build images.
 # Build a single service (from Nexus)
 ./venv/bin/python build.py --service=collectory
 
-# Build all services
-./venv/bin/python build.py --all
+# Build multiple services
+./venv/bin/python build.py --service=collectory --service=ala-hub
 
-# Build help
-./venv/bin/python build.py --help
+# Build all services while skipping some
+./venv/bin/python build.py --all --skip-service=cas --skip-service=biocollect
+
+# Build from a list in a file (JSON or YAML)
+./venv/bin/python build.py --from-file=my-services.yml
 ```
+
+### Advanced Build Options
+
+- `--n-tags=N`: Build the last N versions found in Nexus (useful for bulk updates).
+- `--list-tags=v1,v2`: Build specific comma-separated versions.
+- `--no-cache`: Force build without Docker cache.
+- `--pull`: Always attempt to pull a newer version of base images.
+- `--build-builders`: Force rebuilding of internal builder images.
+- `--check`: Validate Nexus URLs and Java versions without building.
 
 ### Build Methods
 
@@ -77,16 +91,28 @@ services:
     build_method: repo-branch
 ```
 
-## Version Management
-
 ## Dynamic Java Versioning
 
-The builder automatically determines the required Java version (8, 11, 17, 21) based on the service version being built.
-It does this by checking the `dependencies.yaml` file from the LA Toolkit backend.
+The builder automatically determines the required Java version (8, 11, 17, 21) based on the service version. It uses the `dependencies.yaml` from the [LA Toolkit Backend](https://github.com/living-atlases/la-toolkit-backend) as the source of truth.
 
-You can override the dependencies source:
+- Local cache: Dependencies are cached in `~/.cache/la-docker-images/` for 24 hours.
+- Override source: `./venv/bin/python build.py --dependencies=/path/to/local-deps.yaml`
 
-```bash
-# Use a local file
-./venv/bin/python build.py --service=image-service --dependencies=/path/to/dependencies.yaml
-```
+---
+
+## Jenkins Integration
+
+This repository includes a `Jenkinsfile` that automates image building in a CI/CD environment.
+
+### Pipeline Parameters
+
+- `SERVICE`: Comma-separated list of services to build (or `all`).
+- `SKIP_SERVICES`: Services to exclude from the build.
+- `N_TAGS`: Number of recent versions to build if no specific tag is provided.
+- `TAG`: Specific version to build (overrides N_TAGS).
+- `BRANCH`: Git branch for `repo-branch` builds.
+- `PUSH`: Whether to push images to Docker Hub after a successful build.
+
+### Automatic Synchronization
+
+The Jenkinsfile parameter descriptions (the list of available services) are automatically kept in sync with `services-definition.yml` via the `./scripts/update_jenkinsfile.py` script. This script runs as the first stage of the pipeline to ensure documentation matches the code.
