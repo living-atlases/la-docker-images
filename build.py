@@ -525,12 +525,14 @@ def generate_dockerfile(service_name, config, build_path):
             java_opts += " " + " ".join(extra_flags)
             
     # Standard mapping
+    cache_bypass = str(int(time.time()))
     mapping = {
         'SERVICE_NAME': service_name,
         'SERVICE_NAME_UPPER': service_name.upper().replace('-', '_'),
         'DESCRIPTION': config.get('description', ''),
         'VERSION': config.get('version', 'latest'),
         'JAVA_VERSION': str(config.get('java_version')),
+        'CACHE_BYPASS': cache_bypass,
         'ARTIFACT_ID': config.get('artifacts', service_name),
         'EXTENSION': config.get('extension', 'war'),
         'CLASSIFIER': config.get('classifier', ''),
@@ -623,10 +625,11 @@ def build_service(service_name, service_config, dry_run=False, no_cache=False):
         "--build-arg", f"VERSION={version}",
         "--build-arg", f"BUILD_DIR={service_config.get('build_dir', '.')}",
         "--build-arg", f"COMMIT={service_config.get('commit', 'HEAD')}",
+        "--build-arg", f"CACHE_BYPASS={int(time.time())}",
         "." # Context is build_path
     ]
     
-    if no_cache:
+    if no_cache or service_config.get('no_cache'):
         cmd.append("--no-cache")
         
     # We DO NOT use --pull directly because it fails with our local builders.

@@ -237,3 +237,4 @@ services:
     repository: https://apt.gbif.es/
     version: unstable
     java_version: none
+    no_cache: true
