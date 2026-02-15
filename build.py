@@ -7,9 +7,9 @@ dynamic Java version selection based on component versions, and integrates with
 Jenkins CI/CD pipelines.
 
 Usage:
-  build.py --service=<name>... [options]
-  build.py --all [options]
-  build.py --from-file=<file> [options]
+  build.py --service=<name>... [--skip-service=<name>...] [options]
+  build.py --all [--skip-service=<name>...] [options]
+  build.py --from-file=<file> [--skip-service=<name>...] [options]
   build.py -h | --help
   build.py --version
 
