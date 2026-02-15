@@ -8,7 +8,7 @@ pipeline {
     }
 
     parameters {
-        choice(name: 'SERVICE', choices: ['all', 'ala-bie-hub', 'ala-hub', 'ala-namematching-server', 'ala-sensitive-data-server', 'alerts', 'apikey', 'bie-index', 'biocache-service', 'biocollect', 'cas', 'cas-management', 'collectory', 'dashboard', 'data-quality-filter-service', 'doi-service', 'ecodata', 'image-service', 'la-pipelines', 'logger-service', 'pdfgen', 'regions', 'sds-webapp2', 'spatial-hub', 'spatial-service', 'specieslist-webapp', 'userdetails'], description: 'Service to build')
+        choice(name: 'SERVICE', choices: ['all', 'ala-bie-hub', 'ala-hub', 'ala-namematching-server', 'ala-sensitive-data-server', 'alerts', 'apikey', 'bie-index', 'biocache-service', 'biocollect', 'cas', 'cas-management', 'collectory', 'dashboard', 'data-quality-filter-service', 'doi-service', 'ecodata', 'i18n', 'image-service', 'la-pipelines', 'logger-service', 'pdfgen', 'regions', 'sds-webapp2', 'spatial-hub', 'spatial-service', 'specieslist-webapp', 'userdetails'], description: 'Service to build')
         string(name: 'TAG', defaultValue: '', description: 'Version/Tag to build (leave empty for latest/develop)')
         string(name: 'BRANCH', defaultValue: '', description: 'Git branch for repo-branch builds (optional)')
         booleanParam(name: 'PUSH', defaultValue: true, description: 'Push images to Docker Hub')
