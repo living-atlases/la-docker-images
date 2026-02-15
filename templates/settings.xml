@@ -29,6 +29,17 @@
 						<enabled>false</enabled>
 					</snapshots>
 				</repository>
+				<repository>
+					<id>gbif-all</id>
+					<name>GBIF public</name>
+					<url>https://repository.gbif.org/content/groups/gbif</url>
+					<releases>
+						<enabled>true</enabled>
+					</releases>
+					<snapshots>
+						<enabled>true</enabled>
+					</snapshots>
+				</repository>
 			</repositories>
 		</profile>
 	</profiles>
