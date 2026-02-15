@@ -31,6 +31,7 @@ Examples:
 
 Options:
   --service=<name>        Service(s) to build. Can be specified multiple times.
+  --skip-service=<name>   Service(s) to skip. Can be specified multiple times.
   --all                   Build all services defined in services-definition.yml.
   --from-file=<file>      Build services listed in a JSON/YAML file.
   
@@ -723,6 +724,16 @@ def main():
         
     if not services_to_build_names:
         print("No services selected to build. Use --service, --all or --from-file.")
+        sys.exit(0)
+    
+    # Filter out skipped services
+    skip_services = args.get('--skip-service') or []
+    if skip_services:
+        print(f"   🚫 Skipping services: {skip_services}")
+        services_to_build_names = [s for s in services_to_build_names if s not in skip_services]
+        
+    if not services_to_build_names:
+        print("All selected services were skipped. Nothing to build.")
         sys.exit(0)
     
     # --- EXPANSION PHASE ---

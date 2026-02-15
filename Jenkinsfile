@@ -8,7 +8,9 @@ pipeline {
     }
 
     parameters {
-        choice(name: 'SERVICE', choices: ['all', 'ala-bie-hub', 'ala-hub', 'ala-namematching-server', 'ala-sensitive-data-server', 'alerts', 'apikey', 'bie-index', 'biocache-service', 'biocollect', 'cas', 'cas-management', 'collectory', 'dashboard', 'data-quality-filter-service', 'doi-service', 'ecodata', 'i18n', 'image-service', 'la-pipelines', 'logger-service', 'pdfgen', 'regions', 'sds-webapp2', 'spatial-hub', 'spatial-service', 'specieslist-webapp', 'userdetails'], description: 'Service to build')
+        string(name: 'SERVICE', defaultValue: 'all', description: 'Service(s) to build (comma-separated, or "all")')
+        string(name: 'SKIP_SERVICES', defaultValue: '', description: 'Service(s) to skip (comma-separated)')
+        string(name: 'N_TAGS', defaultValue: '1', description: 'Number of recent tags to build if version is latest')
         string(name: 'TAG', defaultValue: '', description: 'Version/Tag to build (leave empty for latest/develop)')
         string(name: 'BRANCH', defaultValue: '', description: 'Git branch for repo-branch builds (optional)')
         booleanParam(name: 'PUSH', defaultValue: true, description: 'Push images to Docker Hub')
@@ -22,14 +24,6 @@ pipeline {
     }
 
     stages {
-        stage('Validate Sync') {
-            steps {
-                script {
-                    sh './scripts/update_jenkinsfile.py --check'
-                }
-            }
-        }
-
         stage('Setup Environment') {
             steps {
                 script {
@@ -49,9 +43,23 @@ pipeline {
                     def args = []
                     
                     if (params.SERVICE && params.SERVICE != 'all') {
-                        args << "--service=${params.SERVICE}"
+                        params.SERVICE.split(',').each { svc ->
+                            def s = svc.trim()
+                            if (s) args << "--service=${s}"
+                        }
                     } else {
                         args << "--all"
+                    }
+
+                    if (params.SKIP_SERVICES) {
+                        params.SKIP_SERVICES.split(',').each { svc ->
+                            def s = svc.trim()
+                            if (s) args << "--skip-service=${s}"
+                        }
+                    }
+
+                    if (params.N_TAGS) {
+                        args << "--n-tags=${params.N_TAGS}"
                     }
 
                     if (params.TAG) args << "--tag=${params.TAG}"
