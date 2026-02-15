@@ -2,13 +2,13 @@
 
 Build repository for Living Atlas Docker images.
 
-**Scope**: This repository is dedicated to building and publishing Docker images. It is separate from `ala-install` ansible roles.
+**Scope**: This repository is dedicated to building and publishing Docker images.
 
 ## Structure
 
-- `services-definition.yml`: Metadata for all services (extracted from legacy docker-compose role).
+- `services-definition.yml`: Metadata for all services.
 - `templates/`: Generic Dockerfile templates (Gradle, Maven).
-- `services/`: Service-specific overrides (e.g. `la-pipelines`, `cas-management`).
+- `services/`: Service-specific overrides (e.g. `la-pipelines`).
 - `scripts/`: Build automation scripts.
 - `build.py`: Main CLI tool.
 
@@ -36,6 +36,9 @@ Use the `build.py` script to generate Dockerfiles and build images.
 
 # Build all services
 ./venv/bin/python build.py --all
+
+# Build help
+./venv/bin/python build.py --help
 ```
 
 ### Build Methods
@@ -87,6 +90,3 @@ You can override the dependencies source:
 # Use a local file
 ./venv/bin/python build.py --service=image-service --dependencies=/path/to/dependencies.yaml
 ```
-
-The `sync_versions.py` script is now deprecated as `build.py` handles this dynamically.
-
