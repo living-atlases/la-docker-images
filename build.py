@@ -771,6 +771,13 @@ def main():
         elif svc_conf.get('build_method') == 'repo-tags':
              version_arg = svc_conf.get('version', 'latest')
              
+             # If branch is explicitly provided, skip tag expansion and use repo-branch
+             if args.get('--branch'):
+                 print(f"   ℹ️  Branch '{args['--branch']}' specified, skipping tag expansion for {name}")
+                 svc_conf['build_method'] = 'repo-branch'
+                 expanded_build_list.append((name, svc_conf))
+                 continue
+
              if version_arg != 'latest':
                   # If a specific tag is requested, find it in the tags list (searching a larger pool if needed)
                   # or fallback to using the version string as the tag name.
