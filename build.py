@@ -769,24 +769,38 @@ def main():
                     expanded_build_list.append((name, v_conf))
         
         elif svc_conf.get('build_method') == 'repo-tags':
-             n_tags = int(args.get('--n-tags', 1))
-             # Fetch tags
-             tags_info = get_github_tags(name, svc_conf, n_tags)
+             version_arg = svc_conf.get('version', 'latest')
+             
+             if version_arg != 'latest':
+                  # If a specific tag is requested, find it in the tags list (searching a larger pool if needed)
+                  # or fallback to using the version string as the tag name.
+                  tags_info = get_github_tags(name, svc_conf, 100) # Search last 100 tags
+                  tags_info = [t for t in tags_info if t[0] == version_arg]
+                  if not tags_info:
+                      print(f"   ⚠️  Tag {version_arg} not found in last 100 tags for {name}. Falling back to version name.")
+                      tags_info = [(version_arg, version_arg)]
+             else:
+                  n_tags = int(args.get('--n-tags', 1))
+                  tags_info = get_github_tags(name, svc_conf, n_tags)
              
              if not tags_info:
                  print(f"   ⚠️  No tags found for {name}. Skipping.")
              else:
-                 print(f"   ✨ Resolved tags for {name}: {[t[0] for t in tags_info]}")
+                 if version_arg == 'latest':
+                      print(f"   ✨ Resolved tags for {name}: {[t[0] for t in tags_info]}")
+                 else:
+                      print(f"   ✨ Using specific tag for {name}: {tags_info[0][0]} ({tags_info[0][1]})")
+
                  for i, (version, original_tag) in enumerate(tags_info):
-                     v_conf = svc_conf.copy()
-                     v_conf['version'] = version
-                     # METHOD MAPPING: repo-tags -> repo-branch with tag as branch
-                     v_conf['build_method'] = 'repo-branch'
-                     v_conf['branch'] = original_tag
-                     # Tag the last one as latest
-                     if i == len(tags_info) - 1:
-                           v_conf['additional_tags'] = ['latest']
-                     expanded_build_list.append((name, v_conf))
+                      v_conf = svc_conf.copy()
+                      v_conf['version'] = version
+                      # METHOD MAPPING: repo-tags -> repo-branch with tag as branch
+                      v_conf['build_method'] = 'repo-branch'
+                      v_conf['branch'] = original_tag
+                      # Tag the last one as latest ONLY if original request was 'latest'
+                      if version_arg == 'latest' and i == len(tags_info) - 1:
+                            v_conf['additional_tags'] = ['latest']
+                      expanded_build_list.append((name, v_conf))
 
         else:
             # Explicit version or not Nexus
