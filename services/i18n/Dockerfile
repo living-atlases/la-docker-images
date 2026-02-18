@@ -14,7 +14,7 @@ ARG CACHE_BYPASS=unknown
 
 LABEL org.opencontainers.image.title="ALA i18n Data"
 LABEL org.opencontainers.image.description="Atlas of Living Australia i18n translations package"
-LABEL org.opencontainers.image.source="https://github.com/AtlasOfLivingAustralia/ala-install"
+LABEL org.opencontainers.image.source="https://github.com/living-atlases/ala-i18n"
 
 # Install ala-i18n package following roles/la-apt + roles/i18n pattern
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
