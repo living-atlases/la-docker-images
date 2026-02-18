@@ -513,6 +513,13 @@ def generate_dockerfile(service_name, config, build_path):
     # Prepare variables for substitution
     java_opts = config.get('java_opts', '') 
     
+    # 1. Add memory defaults if not explicitly provided
+    # Replicating Legacy: tomcat_java_opts | default('-Xmx2g -Xms2g -Xss512k -Djava.awt.headless=true')
+    memory_patterns = ['-Xmx', '-Xms', '-Xss']
+    if not any(pattern in java_opts for pattern in memory_patterns):
+        java_opts = f"-Xmx2g -Xms2g -Xss512k -Djava.awt.headless=true {java_opts}".strip()
+
+    # 2. Add extra_params (-Dkey=value)
     if 'extra_params' in config:
         extra_flags = []
         for param in config['extra_params']:
@@ -524,6 +531,17 @@ def generate_dockerfile(service_name, config, build_path):
         
         if extra_flags:
             java_opts += " " + " ".join(extra_flags)
+
+    # 3. Handle Logging Config if specified
+    log_config_filename = config.get('log_config_filename')
+    artifact_id = config.get('artifacts', service_name)
+    logging_config = ""
+    if log_config_filename:
+        logging_config = f"/data/{artifact_id}/config/{log_config_filename}"
+        # Automatically add -Dlogging.config if not present
+        # Note: some apps use -Dlog4j.configurationFile, etc., but -Dlogging.config is common for spring boot/grails
+        if "-Dlogging.config" not in java_opts:
+            java_opts += f" -Dlogging.config={logging_config}"
             
     # Standard mapping
     cache_bypass = str(int(time.time()))
@@ -540,8 +558,8 @@ def generate_dockerfile(service_name, config, build_path):
         'REPO': config.get('repository', ''),
         'BRANCH': config.get('branch', 'master'),
         'LOG_DIR': config.get('log_dir', ''),
-        'LOG_CONFIG_FILENAME': config.get('log_config_filename', ''),
-        'LOGGING_CONFIG': "", 
+        'LOG_CONFIG_FILENAME': log_config_filename or '',
+        'LOGGING_CONFIG': logging_config,
         'JAVA_OPTS': java_opts.strip(),
         'PORT': str(config.get('port', 8080)),
         'REGISTRY': config.get('registry', DEFAULT_REGISTRY) + ('/' if config.get('registry') and not config.get('registry').endswith('/') else ''),

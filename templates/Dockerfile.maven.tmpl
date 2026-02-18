@@ -205,6 +205,8 @@ ENV LOG_DIR=${LOG_DIR}
 # Uses tomcat_java_opts if available, otherwise uses safe defaults
 ENV JAVA_OPTS=${JAVA_OPTS}
 
+EXPOSE ${PORT}
+
 # Create service user and data directories
 RUN groupadd -r "${SERVICE_USER}" -g 1000 && \
     useradd -r -g "${SERVICE_USER}" -u 1000 -m "${SERVICE_USER}" && \
@@ -217,6 +219,18 @@ RUN groupadd -r "${SERVICE_USER}" -g 1000 && \
 # Create additional log directories for Tomcat-based applications
 RUN mkdir -p /var/log/tomcat10 && \
     chown -R "${SERVICE_USER}:${SERVICE_USER}" /var/log/tomcat10
+
+# Create log directory if specified
+RUN if [ -n "${LOG_DIR}" ]; then \
+    mkdir -p "${LOG_DIR}" && \
+    chown -R "${SERVICE_USER}:${SERVICE_USER}" "${LOG_DIR}"; \
+    fi
+
+# CAS Management specific directories for SAML metadata
+RUN if [ "${APP_ARTIFACT}" = "cas-management" ]; then \
+    mkdir -p /etc/cas/saml/metadata-backups && \
+    chown -R "${SERVICE_USER}:${SERVICE_USER}" /etc/cas/saml; \
+    fi
 
 
 
