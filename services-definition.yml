@@ -81,6 +81,7 @@ services:
         value: /data/cas/config
       - key: ala.password.properties
         value: /data/cas/config/pwe.properties
+    classifier: exec
   userdetails:
     name: User Details
     description: ''
