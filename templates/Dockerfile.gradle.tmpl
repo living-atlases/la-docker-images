@@ -232,6 +232,9 @@ RUN mkdir -p /var/log/tomcat10 && \
 
 VOLUME /data
 
+# Set /tmp permissions to 1777 to allow services (like cas) to write to it
+RUN chmod 1777 /tmp
+
 # Switch to service user for runtime execution
 USER "${SERVICE_USER}"
 
