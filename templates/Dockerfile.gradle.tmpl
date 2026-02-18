@@ -208,12 +208,12 @@ WORKDIR "/opt/atlas/${APP_ARTIFACT}"
 
 COPY --from=final-builder "/build/artifact.${EXTENSION}" "/opt/atlas/${APP_ARTIFACT}/app.${EXTENSION}"
 
-ENV LOGGING_CONFIG=${LOGGING_CONFIG}
-ENV LOG_DIR=${LOG_DIR}
+ENV LOGGING_CONFIG="${LOGGING_CONFIG}"
+ENV LOG_DIR="${LOG_DIR}"
 
 # Default JAVA_OPTS can be overridden via docker-compose environment variables
 # Uses tomcat_java_opts if available, otherwise uses safe defaults
-ENV JAVA_OPTS=${JAVA_OPTS}
+ENV JAVA_OPTS="${JAVA_OPTS}"
 
 EXPOSE ${PORT}
 
