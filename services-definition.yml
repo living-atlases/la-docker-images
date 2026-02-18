@@ -76,6 +76,7 @@ services:
     repository: https://github.com/AtlasOfLivingAustralia/ala-cas-5
     artifacts: cas
     log_config_filename: log4j2.xml
+    log_dir: /var/log/atlas/cas
     extra_params:
       - key: cas.standalone.configurationDirectory
         value: /data/cas/config
@@ -108,6 +109,7 @@ services:
     artifacts: cas-management
     classifier: exec
     log_config_filename: log4j2.xml
+    log_dir: /var/log/atlas/cas-management
     extra_params:
       - key: cas.standalone.configurationDirectory
         value: /data/cas-management/config/
@@ -222,7 +224,7 @@ services:
   ecodata:
     name: ecodata-reporting
     description: provides reporting service for ecodata
-    build_tool: maven
+    build_tool: gradle
     repository: https://github.com/AtlasOfLivingAustralia/ecodata
     artifacts: ecodata
     extra_params:
