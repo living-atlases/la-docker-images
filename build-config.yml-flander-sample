@@ -1,6 +1,6 @@
 services:
   alerts:
-    build_method: repo-branch
+    build_method: repo-commit
     repository: https://github.com/StefanVanDyck/alerts.git
     branch: develop-vbp
     commit: aa46bddabbda1e06e9512a1c6b4509806bcf3ed3
@@ -13,49 +13,49 @@ services:
     java_base_image: amazoncorretto:11
 
   ala-bie-hub:
-    build_method: repo-branch
+    build_method: repo-commit
     repository: https://github.com/inbo/ala-bie-hub.git
     branch: develop
     commit: 0d3ffb7cc6481865b8be2584789c171c3170b96b
     java_base_image: amazoncorretto:11
 
   bie-index:
-    build_method: repo-branch
+    build_method: repo-commit
     repository: https://github.com/inbo/bie-index.git
     branch: master
     commit: 3a2558fcf424da3708469927c5c904c7354f3eaa
     java_base_image: amazoncorretto:11
 
   ala-hub:
-    build_method: repo-branch
+    build_method: repo-commit
     repository: https://github.com/StefanVanDyck/biocache-hubs.git
     branch: develop-vbp
     commit: 8cd294ce001f5a132a876ae585a5705e132c2b6f
     java_base_image: amazoncorretto:17
 
   biocache-service:
-    build_method: repo-branch
+    build_method: repo-commit
     repository: https://github.com/StefanVanDyck/biocache-service.git
     branch: develop-vbp
     commit: cc4e1d17600e0f7df6e0373221bb8a5d2e5442f6
     java_base_image: amazoncorretto:11
 
   collectory:
-    build_method: repo-branch
+    build_method: repo-commit
     repository: https://github.com/StefanVanDyck/collectory
     branch: develop-vbp
     commit: beb8e2005637f74bf2c4ed0819a62522d5cd447b
     java_base_image: amazoncorretto:11
 
   data-quality-filter-service:
-    build_method: repo-branch
+    build_method: repo-commit
     repository: https://github.com/katya-shaleninova/data-quality-filter-service
     branch: 250_setup_data_quality_filter_service
     commit: 83e9fe873398a88c6d50a195c932b0a3fb70d2ff
     java_base_image: amazoncorretto:11
 
   image-service:
-    build_method: repo-branch
+    build_method: repo-commit
     repository: https://github.com/AtlasOfLivingAustralia/image-service.git
     branch: develop
     commit: 304f09a7c7d93b4abef826aee18d617d0952af69
@@ -74,14 +74,14 @@ services:
     java_base_image: amazoncorretto:11
 
   la-pipelines:
-    build_method: repo-branch
+    build_method: repo-commit
     repository: https://github.com/gbif/pipelines.git
     branch: dev
     commit: d9b134f738416ee34f41dc116b5c106795fc487f
     java_base_image: amazoncorretto:17
 
   regions:
-    build_method: repo-branch
+    build_method: repo-commit
     repository: https://github.com/StefanVanDyck/regions.git
     branch: develop-vbp
     commit: 0a6d9d29fbe1b64b67d7774beb15f6f56a89dff2
@@ -94,21 +94,21 @@ services:
     java_base_image: amazoncorretto:11
 
   spatial-hub:
-    build_method: repo-branch
+    build_method: repo-commit
     repository: https://github.com/katya-shaleninova/spatial-hub
     branch: 637-speedup-species-auto-complete
     commit: 90a40561e64753446fc1b54597110c76374ee9b2
     java_base_image: amazoncorretto:11
 
   spatial-service:
-    build_method: repo-branch
+    build_method: repo-commit
     repository: https://github.com/StefanVanDyck/spatial-service.git
     branch: fix-bbox-for-certain-fields
     commit: d2bbec302551fc3b9b77ee5b7e9ead2dfad4df45
     java_base_image: amazoncorretto:11
 
   specieslist-webapp:
-    build_method: repo-branch
+    build_method: repo-commit
     repository: https://github.com/inbo/specieslist-webapp.git
     branch: develop-vbp
     commit: 2932f84fcdfe6b61bc33677fdf7a9c6e99b7297b
