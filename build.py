@@ -542,6 +542,15 @@ def generate_dockerfile(service_name, config, build_path):
         # Note: some apps use -Dlog4j.configurationFile, etc., but -Dlogging.config is common for spring boot/grails
         if "-Dlogging.config" not in java_opts:
             java_opts += f" -Dlogging.config={logging_config}"
+
+    # 4. Add Spring Boot config location and name defaults
+    # This allows users to mount a config file to /data/{artifact_id}/config/application-local-config.yml
+    # and have it override the default configuration.
+    if "-Dspring.config.additional-location" not in java_opts:
+        java_opts += f" -Dspring.config.additional-location=/data/{artifact_id}/config/"
+
+    if "-Dspring.config.name" not in java_opts:
+        java_opts += " -Dspring.config.name=application,application-local-config"
             
     # Standard mapping
     cache_bypass = str(int(time.time()))
@@ -597,7 +606,7 @@ def build_service(service_name, service_config, dry_run=False, no_cache=False):
     registry = service_config.get('registry', DEFAULT_REGISTRY)
     image_name = f"{registry}/{service_name}:{version}"
     
-    print(f"\n🚀 Processing {service_name} ({version})...")
+    print(f"\n🚀 Processing {service_name} ({version}) using {service_config.get('build_method')}...")
     
     # Prepare build directory
     build_path = os.path.join(BUILD_DIR_BASE, service_name)

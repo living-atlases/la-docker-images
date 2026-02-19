@@ -187,7 +187,28 @@ services:
         value: false
 ```
 
----
+### 4. Flexible Configuration (Spring Boot)
+
+All Java/Spring Boot based images are configured to automatically look for configuration files in `/data/<service>/config/`.
+
+- **Standard Config**: `application.yml` or `application.properties`
+- **Local Override**: `application-local-config.yml` (Precedence: High)
+
+By mounting a file to `/data/<service>/config/application-local-config.yml`, you can override any property without rebuilding the image.
+
+**Example `docker-compose.yml`:**
+
+```yaml
+services:
+  collectory:
+    image: gbif/collectory:latest
+    volumes:
+      - ./my-local-config.yml:/data/collectory/config/application-local-config.yml
+```
+
+This works because `JAVA_OPTS` are automatically injected with:
+`-Dspring.config.additional-location=/data/.../config/ -Dspring.config.name=application,application-local-config`
+
 
 ## Jenkins Integration
 
