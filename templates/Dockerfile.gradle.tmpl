@@ -217,6 +217,19 @@ ENV JAVA_OPTS="${JAVA_OPTS}"
 
 EXPOSE ${PORT}
 
+# Install shadow-utils if groupadd/useradd are missing (common in minimal images like al2023)
+RUN if ! command -v groupadd > /dev/null; then \
+    if command -v microdnf > /dev/null; then \
+    microdnf install -y shadow-utils; \
+    elif command -v yum > /dev/null; then \
+    yum install -y shadow-utils; \
+    elif command -v apk > /dev/null; then \
+    apk add --no-cache shadow; \
+    elif command -v apt-get > /dev/null; then \
+    apt-get update && apt-get install -y --no-install-recommends passwd; \
+    fi \
+    fi
+
 # Create service user and data directories
 RUN groupadd -r "${SERVICE_USER}" -g 1000 && \
     useradd -r -g "${SERVICE_USER}" -u 1000 -m "${SERVICE_USER}" && \
