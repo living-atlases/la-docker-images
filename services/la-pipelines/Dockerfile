@@ -85,4 +85,4 @@ ENV EXTRA_JVM_CLI_ARGS="--add-opens=java.base/java.lang=ALL-UNNAMED \
   --add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED \
   -Dlog4j.configuration=file://${LOG_CONFIG} -Dlog4j.configurationFile=file://${LOG_CONFIG}"
 
-ENTRYPOINT ["bash", "-c"]
+ENTRYPOINT ["/bin/bash"]
