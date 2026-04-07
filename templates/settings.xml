@@ -41,6 +41,19 @@
 					</snapshots>
 				</repository>
 			</repositories>
+			<pluginRepositories>
+				<pluginRepository>
+					<id>ala-repository</id>
+					<name>ALA Maven Repository</name>
+					<url>https://nexus.ala.org.au/content/groups/public/</url>
+					<releases>
+						<enabled>true</enabled>
+					</releases>
+					<snapshots>
+						<enabled>false</enabled>
+					</snapshots>
+				</pluginRepository>
+			</pluginRepositories>
 		</profile>
 	</profiles>
 </settings>
