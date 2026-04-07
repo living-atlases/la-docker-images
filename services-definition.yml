@@ -199,11 +199,13 @@ services:
   la-pipelines:
     name: pipelines
     description: Pipelines for data processing and indexing of biodiversity data
-    build_tool: maven
-    repository: https://github.com/gbif/pipelines
+    build_tool: custom
+    repository: https://apt.gbif.es/
     artifacts: la-pipelines
-    build_method: repo-tags
-    build_dir: livingatlas
+    build_method: debian-package
+    version: unstable
+    java_version: 17
+    no_cache: true
   biocollect:
     name: biocollect
     description: advanced data collection tool for biodiversity science
