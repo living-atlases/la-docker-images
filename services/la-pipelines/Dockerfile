@@ -3,6 +3,10 @@ ARG JAVA_VERSION=17
 ARG BUILDER_IMAGE=maven-builder:jdk${JAVA_VERSION}
 ARG BUILD_METHOD=debian-package
 
+# ── No-op stage (used when BUILD_METHOD=debian-package) ──────────────────────
+FROM busybox AS builder-debian-package
+RUN mkdir -p /app
+
 # ── Source-build stage (only used when BUILD_METHOD=repo-branch) ──────────────
 FROM ${BUILDER_IMAGE} AS builder-repo-branch
 
@@ -28,6 +32,9 @@ RUN --mount=type=cache,target=/root/.m2 \
   -Dspotless.check.skip=true -Dmaven.test.skip=true -Dmaven.site.skip=true -Dmaven.javadoc.skip=true \
   -Dproject.build.outputTimestamp=${SOURCE_DATE_EPOCH} \
   -T 10 -U
+
+# ── Select artifact source based on BUILD_METHOD ─────────────────────────────
+FROM builder-${BUILD_METHOD} AS artifact-src
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
 FROM eclipse-temurin:${JAVA_VERSION}-jre-jammy
@@ -83,7 +90,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   fi
 
 # ── repo-branch: copy built artifacts ────────────────────────────────────────
-COPY --from=builder-repo-branch --chown=1000:1000 /app /app-src
+COPY --from=artifact-src --chown=1000:1000 /app /app-src
 
 RUN if [ "${BUILD_METHOD}" != "debian-package" ]; then \
     cp -a /app-src/. /app/ ; \

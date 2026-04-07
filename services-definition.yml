@@ -199,11 +199,11 @@ services:
   la-pipelines:
     name: pipelines
     description: Pipelines for data processing and indexing of biodiversity data
-    build_tool: custom
+    build_tool: maven
     repository: https://apt.gbif.es/
     artifacts: la-pipelines
     build_method: debian-package
-    version: unstable
+    version: latest
     java_version: 17
     no_cache: true
   biocollect:
@@ -237,9 +237,9 @@ services:
   i18n:
     name: i18n
     description: Living Atlas i18n translations package
-    build_tool: custom
+    build_tool: maven
     build_method: debian-package
     repository: https://apt.gbif.es/
-    version: unstable
+    version: latest
     java_version: none
     no_cache: true
