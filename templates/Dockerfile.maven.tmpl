@@ -239,10 +239,10 @@ RUN if [ -n "${LOG_DIR}" ]; then \
     chown -R "${SERVICE_USER}:${SERVICE_USER}" "${LOG_DIR}"; \
     fi
 
-# CAS Management specific directories for SAML metadata
-RUN if [ "${APP_ARTIFACT}" = "cas-management" ]; then \
+# CAS and CAS Management: create /etc/cas/saml for SAML SP metadata
+RUN if [ "${APP_ARTIFACT}" = "cas" ] || [ "${APP_ARTIFACT}" = "cas-management" ]; then \
     mkdir -p /etc/cas/saml/metadata-backups && \
-    chown -R "${SERVICE_USER}:${SERVICE_USER}" /etc/cas/saml; \
+    chown -R "${SERVICE_USER}:${SERVICE_USER}" /etc/cas; \
     fi
 
 
