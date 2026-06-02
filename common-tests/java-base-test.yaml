@@ -1,0 +1,41 @@
+schemaVersion: 2.0.0
+
+metadataTest:
+  labels:
+    - key: org.opencontainers.image.title
+      value: '.*'
+  envVars:
+    - key: JAVA_HOME
+      value: '/opt/java/openjdk'
+  user: '(?!root)'  # Must NOT be root
+
+fileExistenceTests:
+  - name: 'Java binary exists'
+    path: '/opt/java/openjdk/bin/java'
+    shouldExist: true
+    permissions: '-rwxr-xr-x'
+
+  - name: 'Java is in PATH'
+    path: '/usr/bin/java'
+    shouldExist: true
+
+commandTests:
+  - name: 'Java version check'
+    command: 'java'
+    args: ['-version']
+    exitCode: 0
+
+  - name: 'Java can allocate heap memory'
+    command: 'java'
+    args: ['-Xmx512m', '-version']
+    exitCode: 0
+
+  - name: 'Curl installed for healthchecks'
+    command: 'which'
+    args: ['curl']
+    exitCode: 0
+
+  - name: 'Grep installed for logs'
+    command: 'which'
+    args: ['grep']
+    exitCode: 0
