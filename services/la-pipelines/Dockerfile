@@ -112,6 +112,7 @@ RUN if [ "${BUILD_METHOD}" != "debian-package" ]; then \
     cp /app-src/livingatlas/pipelines/target/pipelines-*-shaded.jar /usr/share/la-pipelines/la-pipelines.jar && \
     cp /app-src/livingatlas/scripts/la-pipelines /usr/bin/la-pipelines && \
     chmod +x /usr/bin/la-pipelines && \
+    sed -i "s#VER=\$(dpkg-query --show -f '\${Version}' la-pipelines)#VER=\$(dpkg-query --show -f '\${Version}' la-pipelines 2>/dev/null || true)#" /usr/bin/la-pipelines && \
     cp /app-src/livingatlas/scripts/logging_lib.sh /usr/share/la-pipelines/ && \
     cp /app-src/livingatlas/configs/la-pipelines.yaml /data/la-pipelines/config/ && \
     cp /app-src/livingatlas/configs/la-pipelines-local.yaml /data/la-pipelines/config/la-pipelines-local.yaml.sample && \
