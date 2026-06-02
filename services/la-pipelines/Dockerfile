@@ -17,17 +17,30 @@ ARG REPO=${REPO}
 ARG SOURCE_DATE_EPOCH
 
 WORKDIR /app
+COPY settings.xml /build/settings.xml
 RUN git clone --branch ${BRANCH} ${REPO} . && \
   if [ "${COMMIT}" != "HEAD" ]; then git checkout ${COMMIT}; fi
 
 RUN --mount=type=cache,target=/root/.m2 \
   mvn --batch-mode --no-transfer-progress \
+  -s /build/settings.xml \
+  -Daether.connector.http.connectTimeout=30000 \
+  -Daether.connector.http.requestTimeout=180000 \
+  -Daether.connector.http.retryHandler.count=5 \
+  -Daether.connector.connectTimeout=30000 \
+  -Daether.connector.requestTimeout=180000 \
   clean install \
   -Dspotless.check.skip=true -Dmaven.test.skip=true -Dmaven.site.skip=true -Dmaven.javadoc.skip=true \
   -Dproject.build.outputTimestamp=${SOURCE_DATE_EPOCH} \
   -T 10 -U \
   && cd livingatlas \
   && mvn --batch-mode --no-transfer-progress \
+  -s /build/settings.xml \
+  -Daether.connector.http.connectTimeout=30000 \
+  -Daether.connector.http.requestTimeout=180000 \
+  -Daether.connector.http.retryHandler.count=5 \
+  -Daether.connector.connectTimeout=30000 \
+  -Daether.connector.requestTimeout=180000 \
   clean package -P livingatlas-artifacts \
   -Dspotless.check.skip=true -Dmaven.test.skip=true -Dmaven.site.skip=true -Dmaven.javadoc.skip=true \
   -Dproject.build.outputTimestamp=${SOURCE_DATE_EPOCH} \
@@ -89,11 +102,24 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     rm -rf /var/lib/apt/lists/* ; \
   fi
 
-# ── repo-branch: copy built artifacts ────────────────────────────────────────
+# ── repo-branch: place built artifacts in debian-package layout ──────────────
 COPY --from=artifact-src --chown=1000:1000 /app /app-src
 
+USER root
 RUN if [ "${BUILD_METHOD}" != "debian-package" ]; then \
-    cp -a /app-src/. /app/ ; \
+    set -eu && \
+    mkdir -p /usr/share/la-pipelines /data/la-pipelines/config /usr/share/bash-completion/completions && \
+    cp /app-src/livingatlas/pipelines/target/pipelines-*-shaded.jar /usr/share/la-pipelines/la-pipelines.jar && \
+    cp /app-src/livingatlas/scripts/la-pipelines /usr/bin/la-pipelines && \
+    chmod +x /usr/bin/la-pipelines && \
+    cp /app-src/livingatlas/scripts/logging_lib.sh /usr/share/la-pipelines/ && \
+    cp /app-src/livingatlas/configs/la-pipelines.yaml /data/la-pipelines/config/ && \
+    cp /app-src/livingatlas/configs/la-pipelines-local.yaml /data/la-pipelines/config/la-pipelines-local.yaml.sample && \
+    cp /app-src/livingatlas/pipelines/src/main/resources/log4j-colorized.properties /data/la-pipelines/config/ && \
+    cp /app-src/livingatlas/pipelines/src/main/resources/log4j.properties /data/la-pipelines/config/ && \
+    cp /app-src/livingatlas/pipelines/src/main/resources/logback.xml /data/la-pipelines/config/ && \
+    cp /app-src/livingatlas/scripts/la-pipelines-bash-completion.sh /usr/share/bash-completion/completions/la-pipelines && \
+    chown -R 1000:1000 /usr/share/la-pipelines /data/la-pipelines ; \
   fi && rm -rf /app-src
 
 USER 1000

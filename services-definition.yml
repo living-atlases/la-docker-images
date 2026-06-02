@@ -200,9 +200,10 @@ services:
     name: pipelines
     description: Pipelines for data processing and indexing of biodiversity data
     build_tool: maven
-    repository: https://apt.gbif.es/
+    repository: https://github.com/AtlasOfLivingAustralia/pipelines
     artifacts: la-pipelines
-    build_method: debian-package
+    build_method: repo-branch
+    branch: feature/ala-upgrade
     version: latest
     java_version: 17
     no_cache: true
