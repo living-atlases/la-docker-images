@@ -108,13 +108,17 @@ RUN --mount=type=cache,target=/root/.m2 \
     mvn -s /build/settings.xml install -N -DskipTests -U -f "${BUILD_DIR}/pom.xml" || true && \
     echo "🔨 Building module ${BUILD_DIR} from root..." && \
     mvn -s /build/settings.xml clean package -DskipTests ${MAVEN_PROFILES:+-P ${MAVEN_PROFILES}} -pl "${BUILD_DIR}" -am -U && \
-    find "${BUILD_DIR}/target/" -maxdepth 1 -name "*.${EXTENSION}" -exec mv {} /build/artifact.${EXTENSION} \; || \
-    find "${BUILD_DIR}/target/" -maxdepth 1 -name "*.jar" -exec mv {} /build/artifact.${EXTENSION} \; ; \
+    APP_JAR="$(ls -S "${BUILD_DIR}/target/"*."${EXTENSION}" 2>/dev/null | grep -Ev -- '-(sources|javadoc)\.|/original-' | head -n1)"; \
+    [ -n "$APP_JAR" ] || APP_JAR="$(ls -S "${BUILD_DIR}/target/"*.jar 2>/dev/null | grep -Ev -- '-(sources|javadoc)\.|/original-' | head -n1)"; \
+    echo "📦 jar elegido: $APP_JAR" && \
+    mv "$APP_JAR" "/build/artifact.${EXTENSION}" ; \
     else \
     echo "🔨 Building from root..." && \
     mvn -s /build/settings.xml clean package -DskipTests ${MAVEN_PROFILES:+-P ${MAVEN_PROFILES}} -U && \
-    find "target/" -maxdepth 1 -name "*.${EXTENSION}" -exec mv {} /build/artifact.${EXTENSION} \; || \
-    find "target/" -maxdepth 1 -name "*.jar" -exec mv {} /build/artifact.${EXTENSION} \; ; \
+    APP_JAR="$(ls -S "target/"*."${EXTENSION}" 2>/dev/null | grep -Ev -- '-(sources|javadoc)\.|/original-' | head -n1)"; \
+    [ -n "$APP_JAR" ] || APP_JAR="$(ls -S "target/"*.jar 2>/dev/null | grep -Ev -- '-(sources|javadoc)\.|/original-' | head -n1)"; \
+    echo "📦 jar elegido: $APP_JAR" && \
+    mv "$APP_JAR" "/build/artifact.${EXTENSION}" ; \
     fi
 
 RUN ls -lh /build/artifact.${EXTENSION} && \
@@ -151,13 +155,17 @@ RUN --mount=type=cache,target=/root/.m2 \
     if [ "${BUILD_DIR}" != "." ]; then \
     echo "🔨 Building module ${BUILD_DIR} from root..." && \
     mvn -s /build/settings.xml clean package -DskipTests ${MAVEN_PROFILES:+-P ${MAVEN_PROFILES}} -pl "${BUILD_DIR}" -am -U && \
-    find "${BUILD_DIR}/target/" -maxdepth 1 -name "*.${EXTENSION}" -exec mv {} /build/artifact.${EXTENSION} \; || \
-    find "${BUILD_DIR}/target/" -maxdepth 1 -name "*.jar" -exec mv {} /build/artifact.${EXTENSION} \; ; \
+    APP_JAR="$(ls -S "${BUILD_DIR}/target/"*."${EXTENSION}" 2>/dev/null | grep -Ev -- '-(sources|javadoc)\.|/original-' | head -n1)"; \
+    [ -n "$APP_JAR" ] || APP_JAR="$(ls -S "${BUILD_DIR}/target/"*.jar 2>/dev/null | grep -Ev -- '-(sources|javadoc)\.|/original-' | head -n1)"; \
+    echo "📦 jar elegido: $APP_JAR" && \
+    mv "$APP_JAR" "/build/artifact.${EXTENSION}" ; \
     else \
     echo "🔨 Building from root..." && \
     mvn -s /build/settings.xml clean package -DskipTests ${MAVEN_PROFILES:+-P ${MAVEN_PROFILES}} -U && \
-    find "target/" -maxdepth 1 -name "*.${EXTENSION}" -exec mv {} /build/artifact.${EXTENSION} \; || \
-    find "target/" -maxdepth 1 -name "*.jar" -exec mv {} /build/artifact.${EXTENSION} \; ; \
+    APP_JAR="$(ls -S "target/"*."${EXTENSION}" 2>/dev/null | grep -Ev -- '-(sources|javadoc)\.|/original-' | head -n1)"; \
+    [ -n "$APP_JAR" ] || APP_JAR="$(ls -S "target/"*.jar 2>/dev/null | grep -Ev -- '-(sources|javadoc)\.|/original-' | head -n1)"; \
+    echo "📦 jar elegido: $APP_JAR" && \
+    mv "$APP_JAR" "/build/artifact.${EXTENSION}" ; \
     fi
 
 RUN ls -lh /build/artifact.${EXTENSION} && \
