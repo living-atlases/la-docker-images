@@ -13,7 +13,7 @@ still a deployable image:
 |---|---|---|---|
 | `sds-webapp2` (Grails webapp) | `AtlasOfLivingAustralia/sds` | **DEPRECATED** | nothing — see below |
 | `ala-sensitive-data-server` (Dropwizard service) | `AtlasOfLivingAustralia/ala-sensitive-data-service` | **active** | already built here (`services-definition.yml:175`) |
-| `sds.<domain>` home (the public site) | static (Vite/React) | **active, generic** | a generic static nginx image (see Plan) |
+| `sds.<domain>` home (the public site) | static (Vite/React) | **active, generic** | ✅ `sds-static-home` image — `services/sds-static-home/Dockerfile` |
 
 ## 1. `sds-webapp2` is obsolete (`services-definition.yml:137`)
 
@@ -65,9 +65,13 @@ layer, not in the image.
 Aligned with the LA reusability guidance ("data that differs per organisation =
 config at deploy, not a rebuild"):
 
-1. **One generic static `sds` nginx image** here in `la-docker-images`
-   (productionise `build/temp_sensitive/ala-sds-static-home/`): brandable via
-   build/deploy env, no portal data baked in.
+1. **✅ DONE (this repo): generic `sds-static-home` nginx image** —
+   `services/sds-static-home/Dockerfile` + `services-definition.yml`. Builds gen-2
+   `ala-sds-static-home` from `ala-sensitive-data-service` master; endpoints are set
+   **per portal at deploy** via env (`SDS_WS_URL`, `SDS_XML_URL`, `SDS_SWAGGER_URL`,
+   `SDS_LISTS_URL`, `SDS_HELP_URL`) using placeholder tokens substituted at container
+   start — **one image, no rebuild**, relative defaults. No portal data baked in.
+   (Branding/i18n are still ALA — see *Reusability test* below.)
 2. **Per-portal SDS data provisioning at deploy** in `la-docker-compose`
    (mount the portal's `sensitive-species-data.xml` / `sensitivity-*.xml`),
    so `ala-sensitive-data-server` downloads from the *local* `sds` endpoint
@@ -81,3 +85,39 @@ config at deploy, not a rebuild"):
   config at `/data/ala-sensitive-data-service/config/` — confirmed by
   `app_args` above. This made the container go from `Exited(1)` to `Up`.
 - That fix is independent of the data/NPE work described here.
+
+## Reusability test (2026-06-25)
+
+Scored against *"Reusability guidelines for ALA next-gen components"* (bar: **one
+published artifact configured per LA portal at deploy time**; ground rule: **don't
+disrupt ALA's own workflow**).
+
+| Concern | Backend `ala-sensitive-data-server` | SDS home/UI |
+|---|---|---|
+| Config overridable at runtime (no rebuild) | ✅ `config.yml` mounted | ✅ *after this change* (was ✗: Vite baked `VITE_APP_*` into `dist`) |
+| Public versioned artifact | ✅ image published | ✅ *after this change* (`sds-static-home`; was ✗: S3/CloudFront only) |
+| External/overridable branding | n/a | ❌ hard-links `ala.org.au` BS3 + ALA header/footer |
+| i18n loadable at runtime | n/a | ❌ English-only (gen-2) |
+| Portable per-portal data bootstrap | ⚠️ `sds_url` falls back to ALA-AU | ❌ XML is ALA-AU (Airflow→S3) |
+
+**This repo flips Config + Artifacts to ✅** for the home page. Branding, i18n and
+per-portal data remain open — mapped below. All changes are LA-side build only; ALA's
+source and S3/CloudFront path are untouched.
+
+## Gen-3 successor: `sds-ui` (atlas-index)
+
+`AtlasOfLivingAustralia/atlas-index` is the Next-gen monorepo; **`sds-ui` `v1.0.0`
+(2026-06-25)** is the modern SDS UI — Vite 7 / React 19 + `react-intl` (i18n), bundled
+Bootstrap 5 (no `ala.org.au` CDN). Deferred for now: it's source-only (no artifact),
+**requires the whole monorepo** (`@ala/common-ui` workspace) to build, and targets
+next-gen `atlas-index` APIs rather than the classic `ala-sensitive-data-service`
+v1.1.1 LA portals run today. It is the path to close the **branding** and **i18n**
+gaps once a portal adopts atlas-index.
+
+## Remaining work (follow-ups)
+
+- **Per-portal data** (`la-docker-compose`, SDS.md step 2): serve the portal's own
+  `sensitive-species-data.xml` / `sensitivity-*.xml` at the routed endpoint; drop the
+  silent ALA-AU fallback; keep the source S3-compatible/local.
+- **Branding / i18n**: via gen-3 `sds-ui` (above).
+- **Drop `sds-webapp2`** from `services-definition.yml` once compose switches (step 3).

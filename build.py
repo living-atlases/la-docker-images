@@ -734,25 +734,28 @@ def build_service(service_name, service_config, dry_run=False, no_cache=False):
     # Instead, we pull the external runtime base image if requested.
     if service_config.get("pull"):
         java_version = service_config.get("java_version")
-        if not java_version:
+        if str(java_version).lower() == "none":
+            # Non-Java image (e.g. nginx static): no java base image to pre-pull.
+            # Skip the pull step but continue to the build below.
+            java_version = None
+        elif not java_version:
             print(
                 f"   ❌ Error: java_version not defined for {service_name}. Cannot pull base image."
             )
             sys.exit(1)
-        if str(java_version).lower() == "none":
-            return
-        base_image = f"eclipse-temurin:{java_version}-jre-jammy"
-        print(f"   📡 Pulling external runtime base image: {base_image}...")
-        try:
-            subprocess.check_call(
-                ["docker", "pull", base_image],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except subprocess.CalledProcessError:
-            print(
-                f"   ⚠️  Warning: Failed to pull base image {base_image}. Build might use local cache."
-            )
+        if java_version:
+            base_image = f"eclipse-temurin:{java_version}-jre-jammy"
+            print(f"   📡 Pulling external runtime base image: {base_image}...")
+            try:
+                subprocess.check_call(
+                    ["docker", "pull", base_image],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except subprocess.CalledProcessError:
+                print(
+                    f"   ⚠️  Warning: Failed to pull base image {base_image}. Build might use local cache."
+                )
 
     print(f"   🔨 Building {image_name}...")
     try:

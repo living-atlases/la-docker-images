@@ -193,6 +193,16 @@ services:
     extension: jar
     port: 9180
     app_args: server /data/ala-sensitive-data-service/config/config.yml
+  sds-static-home:
+    name: sds-home
+    description: SDS generic static home page (gen 2, runtime-configurable nginx)
+    repository: https://github.com/AtlasOfLivingAustralia/ala-sensitive-data-service
+    build_method: repo-branch
+    build_tool: node          # cosmetic: custom services/sds-static-home/Dockerfile wins
+    build_dir: ala-sds-static-home
+    branch: master
+    java_version: none
+    port: 8080
   data-quality-filter-service:
     name: data-quality
     description: Data Quality Filter Service
