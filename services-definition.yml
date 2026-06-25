@@ -134,6 +134,11 @@ services:
     repository: https://github.com/AtlasOfLivingAustralia/dashboard
     artifacts: dashboard
     log_config_filename: logback.xml
+  # DEPRECATED — no deployable webapp. The `sds` repo is now a Maven lib
+  # (SensitiveSpeciesXmlBuilder) that only generates XML; webapp + XML moved to
+  # Airflow→S3/CloudFront. This gradle/`sds-webapp2` build cannot succeed against
+  # current master. Modern SDS = generic static home image + per-portal data.
+  # See docs/SDS.md. The active service is `ala-sensitive-data-server` below.
   sds-webapp2:
     name: sds
     description: Sensitive Data Service (SDS)
