@@ -74,7 +74,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   rm -rf /var/lib/apt/lists/*
 
 RUN mkdir /data && chown 1000:1000 /data
-VOLUME /data
+# No `VOLUME /data`: it discards build-time writes under /data and creates
+# anonymous volumes when run without compose. The real mount is provided by
+# la-docker-compose; runtime config defaults live in /usr/share (see below).
 
 # Install yq
 RUN curl -o /usr/bin/yq -LJO https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_${TARGETARCH:-amd64} \
@@ -99,7 +101,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     echo "deb [arch=amd64] https://apt.gbif.es/ ${LA_APT_REPO} main" > /etc/apt/sources.list.d/apt_gbif_es.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends la-pipelines && \
-    rm -rf /var/lib/apt/lists/* ; \
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /usr/share/la-pipelines/config-defaults && \
+    cp -a /data/la-pipelines/config/. /usr/share/la-pipelines/config-defaults/ && \
+    chown -R 1000:1000 /usr/share/la-pipelines ; \
   fi
 
 # ── repo-branch: place built artifacts in debian-package layout ──────────────
@@ -108,20 +113,40 @@ COPY --from=artifact-src --chown=1000:1000 /app /app-src
 USER root
 RUN if [ "${BUILD_METHOD}" != "debian-package" ]; then \
     set -eu && \
-    mkdir -p /usr/share/la-pipelines /data/la-pipelines/config /usr/share/bash-completion/completions && \
+    mkdir -p /usr/share/la-pipelines/config-defaults /usr/share/bash-completion/completions && \
     cp /app-src/livingatlas/pipelines/target/pipelines-*-shaded.jar /usr/share/la-pipelines/la-pipelines.jar && \
     cp /app-src/livingatlas/scripts/la-pipelines /usr/bin/la-pipelines && \
     chmod +x /usr/bin/la-pipelines && \
     sed -i "s#VER=\$(dpkg-query --show -f '\${Version}' la-pipelines)#VER=\$(dpkg-query --show -f '\${Version}' la-pipelines 2>/dev/null || true)#" /usr/bin/la-pipelines && \
     cp /app-src/livingatlas/scripts/logging_lib.sh /usr/share/la-pipelines/ && \
-    cp /app-src/livingatlas/configs/la-pipelines.yaml /data/la-pipelines/config/ && \
-    cp /app-src/livingatlas/configs/la-pipelines-local.yaml /data/la-pipelines/config/la-pipelines-local.yaml.sample && \
-    cp /app-src/livingatlas/pipelines/src/main/resources/log4j-colorized.properties /data/la-pipelines/config/ && \
-    cp /app-src/livingatlas/pipelines/src/main/resources/log4j.properties /data/la-pipelines/config/ && \
-    cp /app-src/livingatlas/pipelines/src/main/resources/logback.xml /data/la-pipelines/config/ && \
+    cp /app-src/livingatlas/configs/la-pipelines.yaml /usr/share/la-pipelines/config-defaults/ && \
+    cp /app-src/livingatlas/configs/la-pipelines-local.yaml /usr/share/la-pipelines/config-defaults/la-pipelines-local.yaml.sample && \
+    cp /app-src/livingatlas/pipelines/src/main/resources/log4j-colorized.properties /usr/share/la-pipelines/config-defaults/ && \
+    cp /app-src/livingatlas/pipelines/src/main/resources/log4j.properties /usr/share/la-pipelines/config-defaults/ && \
+    cp /app-src/livingatlas/pipelines/src/main/resources/logback.xml /usr/share/la-pipelines/config-defaults/ && \
     cp /app-src/livingatlas/scripts/la-pipelines-bash-completion.sh /usr/share/bash-completion/completions/la-pipelines && \
-    chown -R 1000:1000 /usr/share/la-pipelines /data/la-pipelines ; \
+    chown -R 1000:1000 /usr/share/la-pipelines ; \
   fi && rm -rf /app-src
+
+# ── Runtime seeding entrypoint (replicates the .deb .install + postinst) ─────
+# /data/la-pipelines/config is a bind-mount at runtime, so baked config is
+# shadowed. Ship defaults outside the volume and seed missing files on start,
+# respecting whatever Ansible already deployed (copy-if-absent).
+COPY <<'EOF' /usr/local/bin/docker-entrypoint.sh
+#!/usr/bin/env bash
+set -e
+CONF=/data/la-pipelines/config
+DEF=/usr/share/la-pipelines/config-defaults
+mkdir -p "$CONF"
+for f in la-pipelines.yaml logback.xml log4j.properties log4j-colorized.properties; do
+  if [ -f "$DEF/$f" ] && [ ! -f "$CONF/$f" ]; then cp "$DEF/$f" "$CONF/$f"; fi
+done
+if [ ! -f "$CONF/la-pipelines-local.yaml" ] && [ -f "$DEF/la-pipelines-local.yaml.sample" ]; then
+  cp "$DEF/la-pipelines-local.yaml.sample" "$CONF/la-pipelines-local.yaml"
+fi
+exec "$@"
+EOF
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 USER 1000
 
@@ -141,4 +166,5 @@ ENV EXTRA_JVM_CLI_ARGS="--add-opens=java.base/java.lang=ALL-UNNAMED \
   --add-opens=java.base/sun.util.calendar=ALL-UNNAMED \
   --add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED"
 
-ENTRYPOINT ["/bin/bash"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["/bin/bash"]
