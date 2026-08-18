@@ -28,9 +28,11 @@ pipeline {
             steps {
                 script {
                     sh './scripts/update_jenkinsfile.py --check'
-                    // Stdlib only, no Docker: catches a template that bakes
-                    // JAVA_OPTS into the image before anything gets built.
+                    // Both are stdlib only and run before the venv exists, so a
+                    // broken template or a broken artifact resolution is caught
+                    // in seconds rather than after hours of building.
                     sh './scripts/test-dockerfile-generation.py'
+                    sh 'python3 scripts/test_build_logic.py'
                 }
             }
         }
@@ -92,6 +94,34 @@ pipeline {
                         }
                     } else {
                         sh buildCmd
+                    }
+                }
+            }
+        }
+
+        stage('Image Tests') {
+            when {
+                expression { !params.DRY_RUN }
+            }
+            steps {
+                script {
+                    // A sample, not all ~214 images: each of these starts a
+                    // container to check a JAVA_OPTS override actually reaches
+                    // the JVM (gh-3), which costs a minute or so per image.
+                    // One gradle-built and one maven-built service, newest tag
+                    // only. run-container-tests.sh skips cleanly when an image
+                    // was not part of this run.
+                    // build/ is gitignored and the workspace is wiped after every
+                    // run, so a Dockerfile is only there for what this run built.
+                    def tested = 0
+                    ['userdetails', 'cas'].each { svc ->
+                        if (fileExists("build/${svc}/Dockerfile")) {
+                            sh "REGISTRY=livingatlases ./scripts/run-container-tests.sh ${svc} latest"
+                            tested++
+                        }
+                    }
+                    if (tested == 0) {
+                        echo "No sampled service was built in this run, skipping image tests."
                     }
                 }
             }

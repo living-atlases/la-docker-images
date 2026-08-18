@@ -63,6 +63,9 @@ Options:
   --pull                  Always attempt to pull a newer version of the image.
   --update-metadata       Force update of Nexus metadata (ignore cache).
   --build-builders        Force rebuilding of base builder images (gradle/maven).
+  --strict                Abort on the first version that cannot be built.
+                          Default is to skip historical versions and keep going,
+                          failing only if the newest version of a service fails.
 
   # Configuration Files
   --config=<file>         Path to local build config overrides [default: build-config.yml].
@@ -94,6 +97,18 @@ try:
     import deps_utils
 except ImportError:
     deps_utils = None
+
+import artifact_resolver
+from concurrent.futures import ThreadPoolExecutor
+
+# Nexus is on the other side of the world, so each resolution is latency-bound
+# rather than CPU-bound: ~9s serial, and there are ~214 of them at --n-tags=10.
+# Kept modest on purpose -- a sustained 16-way fan-out made Nexus return short
+# reads on the larger artifacts, which the resolver then had to retry.
+ARTIFACT_RESOLVE_WORKERS = 8
+
+# Runtime base images already pulled in this process.
+_PULLED_BASE_IMAGES = set()
 
 # Determine script location to resolve relative paths correctly
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -383,6 +398,86 @@ def save_cached_metadata(url, content):
             f.write(content)
     except Exception as e:
         print(f"   ⚠️  Warning: Could not save to cache: {e}")
+
+
+def resolve_artifacts(build_list):
+    """Fill in each task's real classifier/extension for its own version.
+
+    services-definition.yml declares them once per service, but the packaging has
+    changed over time: 26 of the 214 (service, version) pairs at --n-tags=10 do
+    not match what is declared, which is what aborted build #213. Both the Nexus
+    URL check and the Dockerfile's download step read these keys, so resolving
+    once here fixes both.
+
+    Returns (resolved_tasks, dropped), where dropped lists the pairs that publish
+    nothing `java -jar` can start.
+    """
+    pending = [
+        (name, conf)
+        for name, conf in build_list
+        if conf.get("build_method") == "nexus"
+    ]
+    if not pending:
+        return build_list, []
+
+    print(f"\n🔎 Resolving artifacts for {len(pending)} version(s)...")
+
+    def resolve(task):
+        name, conf = task
+        try:
+            choice = artifact_resolver.resolve_artifact(
+                conf.get("artifacts", name),
+                conf.get("version"),
+                conf.get("classifier", ""),
+                conf.get("extension", "war"),
+                group_id=conf.get("group_id", artifact_resolver.DEFAULT_GROUP_ID),
+                preference=conf.get("artifact_preference"),
+            )
+            return task, choice, None
+        except artifact_resolver.TransientResolveError as exc:
+            return task, None, str(exc)
+
+    with ThreadPoolExecutor(max_workers=ARTIFACT_RESOLVE_WORKERS) as pool:
+        results = list(pool.map(resolve, pending))
+
+    dropped = []
+    for (name, conf), choice, error in results:
+        version = conf.get("version")
+        declared = f"{conf.get('classifier', '')}:{conf.get('extension', 'war')}"
+
+        if error:
+            dropped.append(
+                {"name": name, "version": version, "reason": f"Nexus unreachable ({error})",
+                 "is_newest": conf.get("is_newest", True)}
+            )
+            continue
+
+        if choice is None:
+            dropped.append(
+                {"name": name, "version": version,
+                 "reason": "no artifact with a Main-Class, nothing to run",
+                 "is_newest": conf.get("is_newest", True)}
+            )
+            continue
+
+        conf["classifier"] = choice["classifier"]
+        conf["extension"] = choice["extension"]
+
+        # Only report the ones that move, or the log is 214 identical lines.
+        resolved = f"{choice['classifier']}:{choice['extension']}"
+        if resolved != declared:
+            print(
+                f"   🔀 {name} ({version}): {declared} → {resolved} "
+                f"(published: {', '.join(choice['candidates'])})"
+            )
+
+    dropped_keys = {(d["name"], d["version"]) for d in dropped}
+    kept = [
+        (name, conf)
+        for name, conf in build_list
+        if (name, conf.get("version")) not in dropped_keys
+    ]
+    return kept, dropped
 
 
 def get_nexus_versions(service_name, config, n=1, update_metadata=False):
@@ -745,24 +840,32 @@ def build_service(service_name, service_config, dry_run=False, no_cache=False):
             sys.exit(1)
         if java_version:
             base_image = f"eclipse-temurin:{java_version}-jre-jammy"
-            print(f"   📡 Pulling external runtime base image: {base_image}...")
-            try:
-                subprocess.check_call(
-                    ["docker", "pull", base_image],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            except subprocess.CalledProcessError:
-                print(
-                    f"   ⚠️  Warning: Failed to pull base image {base_image}. Build might use local cache."
-                )
+            # A --n-tags=10 run is ~214 builds over a handful of Java versions, so
+            # pull each base image once per run instead of once per image.
+            if base_image in _PULLED_BASE_IMAGES:
+                print(f"   📦 Base image already pulled this run: {base_image}")
+            else:
+                print(f"   📡 Pulling external runtime base image: {base_image}...")
+                try:
+                    subprocess.check_call(
+                        ["docker", "pull", base_image],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    _PULLED_BASE_IMAGES.add(base_image)
+                except subprocess.CalledProcessError:
+                    print(
+                        f"   ⚠️  Warning: Failed to pull base image {base_image}. Build might use local cache."
+                    )
 
     print(f"   🔨 Building {image_name}...")
+    stage = "docker build"
     try:
         subprocess.check_call(cmd, cwd=build_path)
         print(f"   ✅ Build successful: {image_name}")
 
         if service_config["push"]:
+            stage = "docker push"
             print(f"   📤 Pushing {image_name}...")
             subprocess.check_call(["docker", "push", image_name])
             print("   ✅ Push successful")
@@ -770,14 +873,21 @@ def build_service(service_name, service_config, dry_run=False, no_cache=False):
         # Additional Tags (e.g. latest)
         for tag in service_config.get("additional_tags", []):
             tag_name = f"{registry}/{service_name}:{tag}"
+            stage = f"docker tag {tag}"
             print(f"   🏷️  Tagging {tag_name}...")
             subprocess.check_call(["docker", "tag", image_name, tag_name])
             if service_config["push"]:
+                stage = f"docker push {tag}"
                 print(f"   📤 Pushing {tag_name}...")
                 subprocess.check_call(["docker", "push", tag_name])
 
-    except subprocess.CalledProcessError as e:
-        sys.exit(1)
+    except subprocess.CalledProcessError:
+        # Reported, not fatal: the caller decides, because at --n-tags=10 one bad
+        # historical version must not throw away the hours already spent.
+        print(f"   ❌ Failed at {stage}: {image_name}")
+        return stage
+
+    return None
 
 
 def main():
@@ -885,6 +995,12 @@ def main():
                     # Tag the last one as latest
                     if i == len(versions) - 1:
                         v_conf["additional_tags"] = ["latest"]
+                        v_conf["is_newest"] = True
+                    else:
+                        # Historical versions are best-effort: old packaging and
+                        # old toolchains make some of them unbuildable, and one of
+                        # those must not take the whole run down with it.
+                        v_conf["is_newest"] = False
                     expanded_build_list.append((name, v_conf))
 
         elif svc_conf.get("build_method") == "repo-tags":
@@ -940,87 +1056,114 @@ def main():
             # Explicit version or not Nexus
             expanded_build_list.append((name, svc_conf))
 
+    # --- ARTIFACT RESOLUTION PHASE ---
+    expanded_build_list, unbuildable = resolve_artifacts(expanded_build_list)
+
     # --- RESOLVE VALIDATION & JAVA VERSIONS ---
+    #
+    # Everything from here on drops the offending (service, version) pair instead
+    # of aborting. At --n-tags=10 there are ~214 pairs reaching back through old
+    # packaging and old toolchains, so an all-or-nothing run never finishes; but a
+    # failure on the NEWEST version of a service is still fatal, because that is
+    # the one tagged `latest` and a regression there is real. --strict restores
+    # the old behaviour for one-off manual builds.
+    strict = args.get("--strict")
+
+    def drop(name, conf, reason):
+        unbuildable.append(
+            {
+                "name": name,
+                "version": conf.get("version"),
+                "reason": reason,
+                "is_newest": conf.get("is_newest", True),
+            }
+        )
+
     final_build_tasks = []  # (name, config)
 
     for name, svc_conf in expanded_build_list:
         # Determine Java Version
         if "java_version" not in svc_conf:
             # Try to resolve dynamically
+            v = svc_conf.get("version", "latest")
             if deps_utils and dependencies:
-                v = svc_conf.get("version", "latest")
                 dyn = deps_utils.determine_java_version(name, v, dependencies)
                 if dyn:
                     svc_conf["java_version"] = dyn
                 else:
-                    print(
-                        f"   ❌ Error: Could not determine Java version for {name} ({v}) from dependencies.yaml"
-                    )
-                    print(
-                        f"      Please specify it manually using --java-version=<ver> or in services-definition.yml"
-                    )
-                    sys.exit(1)
+                    drop(name, svc_conf, "no Java version in dependencies.yaml")
+                    continue
             else:
-                print(
-                    f"   ❌ Error: Java version for {name} must be specified manually using --java-version=<ver>"
+                drop(
+                    name,
+                    svc_conf,
+                    "no Java version (dependencies.yaml unavailable, pass --java-version)",
                 )
-                print(
-                    f"      or resolved via dependencies.yaml (which is currently unavailable or missing deps_utils)."
-                )
-                sys.exit(1)
+                continue
 
         final_build_tasks.append((name, svc_conf))
 
     # --- GLOBAL CHECK PHASE ---
     print("\n🔎 Checking Nexus URLs for all selected services...")
-    check_results = []
-    has_failures = False
+    checked_tasks = []
 
     for name, svc_conf in final_build_tasks:
         version = svc_conf.get("version")
+        java_version = svc_conf.get("java_version")
 
         # Only check if build method is nexus
-        java_version = svc_conf.get("java_version")
         if svc_conf.get("build_method") == "nexus":
             success, url = check_nexus_url(name, svc_conf)
             status_icon = "✅" if success else "❌"
-            check_results.append(
-                {
-                    "name": name,
-                    "version": version,
-                    "java_version": java_version,
-                    "url": url,
-                    "success": success,
-                    "icon": status_icon,
-                }
-            )
-            if not success:
-                has_failures = True
-
-            # Print immediate feedback
             print(f"   {status_icon} {name} ({version}) [Java {java_version}]: {url}")
+            if not success:
+                drop(name, svc_conf, f"artifact not reachable: {url}")
+                continue
         else:
             print(
                 f"   ⏭️  {name} ({version}) [Java {java_version}]: Skipped (method: {svc_conf.get('build_method')})"
             )
 
-    # If failures, abort (even in dry-run, we show results then stop)
-    if has_failures:
-        print("\n❌ Nexus URL Check Failed for the following services:")
-        for res in check_results:
-            if not res["success"]:
-                print(f"   - {res['name']} ({res['version']}) -> {res['url']}")
+        checked_tasks.append((name, svc_conf))
 
-        print("\n🛑 Aborting verify/build process due to invalid URLs.")
+    final_build_tasks = checked_tasks
+
+    fatal = [d for d in unbuildable if d["is_newest"]]
+
+    if unbuildable:
+        print("\n⚠️  Versions that cannot be built:")
+        for entry in unbuildable:
+            marker = "❌" if entry["is_newest"] else "  "
+            print(f"   {marker} {entry['name']} ({entry['version']}): {entry['reason']}")
+
+    if fatal or (strict and unbuildable):
+        print(
+            f"\n🛑 Aborting: {len(fatal or unbuildable)} problem(s) on versions that must build."
+            if not strict
+            else "\n🛑 Aborting: --strict and at least one version cannot be built."
+        )
         sys.exit(1)
 
-    print("\n✅ All Nexus URLs validated. Proceeding...\n")
+    if unbuildable:
+        print(
+            f"\n⚠️  Skipping {len(unbuildable)} historical version(s); "
+            f"continuing with {len(final_build_tasks)}.\n"
+        )
+    else:
+        print("\n✅ All Nexus URLs validated. Proceeding...\n")
+
+    if not final_build_tasks:
+        print("🛑 Nothing left to build.")
+        sys.exit(1)
 
     if args["--check"]:
         print("🏁 Check-only mode: Validation successful. Exiting.")
         sys.exit(0)
 
     # --- BUILD PHASE ---
+    built = []
+    build_failures = []
+
     for name, svc_conf in final_build_tasks:
         # Ensure builder exists before building the service
         registry = svc_conf.get("registry", DEFAULT_REGISTRY)
@@ -1039,7 +1182,54 @@ def main():
                 dry_run=args["--dry-run"],
             )
 
-        build_service(name, svc_conf, args["--dry-run"], args["--no-cache"])
+        failed_stage = build_service(
+            name, svc_conf, args["--dry-run"], args["--no-cache"]
+        )
+
+        if failed_stage:
+            build_failures.append(
+                {
+                    "name": name,
+                    "version": svc_conf.get("version"),
+                    "reason": f"failed at {failed_stage}",
+                    "is_newest": svc_conf.get("is_newest", True),
+                }
+            )
+            if strict:
+                print("\n🛑 Aborting: --strict and a build failed.")
+                sys.exit(1)
+        else:
+            built.append((name, svc_conf.get("version")))
+
+    # --- SUMMARY ---
+    # A run at --n-tags=10 is ~214 images over many hours. Without this the log is
+    # unreadable and there is no way to tell what was actually published.
+    print("\n" + "━" * 60)
+    print(f"📊 Summary: {len(built)} built, {len(unbuildable)} skipped, "
+          f"{len(build_failures)} failed")
+    print("━" * 60)
+
+    if unbuildable:
+        print(f"\n⏭️  Skipped ({len(unbuildable)}):")
+        for entry in unbuildable:
+            print(f"   - {entry['name']} ({entry['version']}): {entry['reason']}")
+
+    if build_failures:
+        print(f"\n❌ Failed ({len(build_failures)}):")
+        for entry in build_failures:
+            print(f"   - {entry['name']} ({entry['version']}): {entry['reason']}")
+
+    fatal_builds = [f for f in build_failures if f["is_newest"]]
+    if fatal_builds:
+        print(
+            f"\n🛑 {len(fatal_builds)} failure(s) on the newest version of a service."
+        )
+        sys.exit(1)
+
+    if build_failures:
+        print("\n⚠️  Only historical versions failed; the newest of each service is fine.")
+
+    print("")
 
 
 if __name__ == "__main__":

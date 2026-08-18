@@ -181,6 +181,20 @@ RUN ls -lh /build/artifact.${EXTENSION} && \
 # hadolint ignore=DL3006
 FROM builder-${BUILD_METHOD} AS final-builder
 
+# The runtime CMD is `java -jar app.${EXTENSION}`, which needs a Main-Class in the
+# manifest. build.py resolves a runnable artifact per version, but --tag bypasses
+# that resolution, and some published artifacts simply cannot be run this way: a
+# plain .war has no embedded server (apikey 1.3 ships one next to a bootable jar,
+# biocache-service 3.4.0 ships nothing else). Without this the image builds and
+# pushes fine and only dies at startup.
+# Written to a file rather than piped into `grep -q`: the SHELL above sets
+# pipefail, and grep exiting early on a match would SIGPIPE unzip and fail the
+# pipeline. The sed joins MANIFEST.MF continuation lines, which wrap at 72 bytes.
+RUN unzip -p "/build/artifact.${EXTENSION}" META-INF/MANIFEST.MF \
+      | tr -d '\r' | sed ':a;N;$$!ba;s/\n //g' > /tmp/manifest.txt; \
+    grep -q '^Main-Class:' /tmp/manifest.txt \
+    || { echo "ERROR: /build/artifact.${EXTENSION} declares no Main-Class, so 'java -jar' cannot start it"; exit 1; }
+
 # ============================================
 # Stage 7: Final Runtime - Java JAR with setup
 # ============================================
