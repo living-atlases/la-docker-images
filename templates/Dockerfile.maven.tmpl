@@ -190,10 +190,20 @@ FROM builder-${BUILD_METHOD} AS final-builder
 # Written to a file rather than piped into `grep -q`: the SHELL above sets
 # pipefail, and grep exiting early on a match would SIGPIPE unzip and fail the
 # pipeline. The sed joins MANIFEST.MF continuation lines, which wrap at 72 bytes.
-RUN unzip -p "/build/artifact.${EXTENSION}" META-INF/MANIFEST.MF \
-      | tr -d '\r' | sed ':a;N;$$!ba;s/\n //g' > /tmp/manifest.txt; \
+# `jar` and not `unzip`: the maven builder image has no unzip, so the check died
+# there with "unzip: command not found" and then printed the Main-Class error on
+# top of it, blaming the artifact for a missing tool. `jar` ships with every JDK,
+# so it is the one thing both builders are guaranteed to have.
+# `set -e` keeps the two failures apart: if the artifact cannot be opened at all,
+# the build dies with that error instead of this one.
+RUN set -e; \
+    mkdir -p /tmp/mf && cd /tmp/mf; \
+    jar xf "/build/artifact.${EXTENSION}" META-INF/MANIFEST.MF; \
+    test -f META-INF/MANIFEST.MF \
+      || { echo "ERROR: /build/artifact.${EXTENSION} has no META-INF/MANIFEST.MF"; exit 1; }; \
+    tr -d '\r' < META-INF/MANIFEST.MF | sed ':a;N;$$!ba;s/\n //g' > /tmp/manifest.txt; \
     grep -q '^Main-Class:' /tmp/manifest.txt \
-    || { echo "ERROR: /build/artifact.${EXTENSION} declares no Main-Class, so 'java -jar' cannot start it"; exit 1; }
+      || { echo "ERROR: /build/artifact.${EXTENSION} declares no Main-Class, so 'java -jar' cannot start it"; exit 1; }
 
 # ============================================
 # Stage 7: Final Runtime - Java JAR with setup
