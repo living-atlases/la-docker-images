@@ -1,13 +1,13 @@
 schemaVersion: 2.0.0
 
+# Only assertions that hold for EVERY java image belong here. metadataTest
+# compares labels, cmd and entrypoint literally -- not as regexes -- so anything
+# whose value varies per service (image.title, image.version, the CMD) has to go
+# in build/<service>/container-test.yaml or in run-container-tests.sh instead.
 metadataTest:
-  labels:
-    - key: org.opencontainers.image.title
-      value: '.*'
   envVars:
     - key: JAVA_HOME
       value: '/opt/java/openjdk'
-  user: '(?!root)'  # Must NOT be root
 
 fileExistenceTests:
   - name: 'Java binary exists'
@@ -15,11 +15,15 @@ fileExistenceTests:
     shouldExist: true
     permissions: '-rwxr-xr-x'
 
-  - name: 'Java is in PATH'
-    path: '/usr/bin/java'
-    shouldExist: true
-
 commandTests:
+  # Not metadataTest.user: that field is a Go RE2 regex, and RE2 has no negative
+  # lookahead, so the '(?!root)' this used to carry could never match anything.
+  - name: 'Container does not run as root'
+    command: 'id'
+    args: ['-un']
+    excludedOutput: ['^root$']
+    exitCode: 0
+
   - name: 'Java version check'
     command: 'java'
     args: ['-version']
@@ -39,3 +43,16 @@ commandTests:
     command: 'which'
     args: ['grep']
     exitCode: 0
+
+# The gh-3 guard (JAVA_OPTS must expand at container start, not be baked into
+# the CMD at build time) is NOT here. commandTests run their own command inside
+# the container and never touch the image's CMD, so any test written that way
+# passes just as green against the broken templates. metadataTest.cmd does read
+# the real CMD, but it matches exactly -- no regex, verified against the vendored
+# binary -- and every service has a different CMD, so it cannot live in a file
+# shared by all images.
+#
+# It lives in scripts/run-container-tests.sh instead, which inspects the CMD with
+# `docker inspect` and then runs the image with an overridden JAVA_OPTS. The
+# template that produces the CMD is guarded without Docker by
+# scripts/test-dockerfile-generation.py.

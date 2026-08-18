@@ -13,6 +13,10 @@ SERVICE=$1
 IMAGE_TAG=${2:-test}
 REGISTRY=${REGISTRY:-}
 
+# 128m expressed in bytes. A power of two is already heap-aligned, so the JVM
+# reports MaxHeapSize back exactly instead of rounding it up.
+JAVA_OPTS_PROBE_BYTES=134217728
+
 # Validate inputs
 if [ -z "$SERVICE" ]; then
   cat << EOF
@@ -68,7 +72,7 @@ if grep -q "^USER\s" "$DOCKERFILE"; then
     failed_tests+=("user-not-root")
   else
     echo "✅ PASS: Container runs as non-root user"
-    ((test_count++))
+    test_count=$((test_count + 1))
   fi
 else
   echo "⚠️  WARNING: No USER directive found (will run as root)"
@@ -78,7 +82,7 @@ fi
 # Check 2: Verify EXPOSE port is defined
 if grep -q "^EXPOSE\s" "$DOCKERFILE"; then
   echo "✅ PASS: EXPOSE port defined"
-  ((test_count++))
+  test_count=$((test_count + 1))
 else
   echo "⚠️  WARNING: No EXPOSE directive found"
 fi
@@ -86,7 +90,7 @@ fi
 # Check 3: Verify WORKDIR is defined
 if grep -q "^WORKDIR\s" "$DOCKERFILE"; then
   echo "✅ PASS: WORKDIR defined"
-  ((test_count++))
+  test_count=$((test_count + 1))
 else
   echo "⚠️  WARNING: No WORKDIR defined"
 fi
@@ -94,12 +98,12 @@ fi
 # Check 4: Verify Java installation for Java services
 if grep -q "eclipse-temurin\|openjdk\|JAVA_HOME" "$DOCKERFILE"; then
   echo "✅ PASS: Java base image or Java installation detected"
-  ((test_count++))
+  test_count=$((test_count + 1))
   
   # Check for JAVA_HOME env
   if grep -q "JAVA_HOME" "$DOCKERFILE"; then
     echo "✅ PASS: JAVA_HOME environment variable set"
-    ((test_count++))
+    test_count=$((test_count + 1))
   else
     echo "⚠️  WARNING: JAVA_HOME not explicitly set"
   fi
@@ -110,7 +114,7 @@ fi
 # Check 5: Verify directories for data persistence
 if grep -q "/data" "$DOCKERFILE"; then
   echo "✅ PASS: Data directory defined"
-  ((test_count++))
+  test_count=$((test_count + 1))
 else
   echo "⚠️  WARNING: No /data directory found"
 fi
@@ -118,7 +122,7 @@ fi
 # Check 6: Verify VOLUME definition
 if grep -q "^VOLUME\s" "$DOCKERFILE"; then
   echo "✅ PASS: VOLUME defined for persistence"
-  ((test_count++))
+  test_count=$((test_count + 1))
 else
   echo "⚠️  WARNING: No VOLUME defined"
 fi
@@ -127,7 +131,7 @@ fi
 if [ -f "$SERVICE_TEST_FILE" ]; then
   echo "✅ PASS: Service-specific test file found"
   echo "   Location: $SERVICE_TEST_FILE"
-  ((test_count++))
+  test_count=$((test_count + 1))
 else
   echo "⚠️  WARNING: No service-specific test file"
   echo "   Expected: $SERVICE_TEST_FILE"
@@ -137,31 +141,80 @@ fi
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# If user has Docker access, offer to run full tests
-if command -v docker &> /dev/null && docker ps > /dev/null 2>&1; then
-  echo ""
-  echo "✨ Docker socket accessible! Full validation available."
-  echo ""
-  echo "To run comprehensive Container Structure Tests:"
-  echo ""
-  echo "  1. Download and setup container-structure-test:"
-  echo "     cd $REPO_ROOT"
-  echo "     curl -sSL https://storage.googleapis.com/container-structure-test/latest/container-structure-test-linux-amd64 \\"
-  echo "       -o container-structure-test"
-  echo "     chmod +x container-structure-test"
-  echo ""
-  echo "  2. Run tests against running image:"
-  echo "     ./container-structure-test test --image $FULL_IMAGE --config $SERVICE_TEST_FILE"
-  echo ""
-  echo "  3. To test before building:"
-  echo "     docker build -t $SERVICE:test ./build/$SERVICE"
-  echo "     ./container-structure-test test --image $SERVICE:test --config build/$SERVICE/container-test.yaml"
-  echo ""
-elif [ -f "$REPO_ROOT/container-structure-test" ]; then
-  echo ""
-  echo "⚠️  Docker socket not accessible, but CST tool is available."
-  echo "   Run with sudo or ensure Docker group membership:"
-  echo "     sudo $REPO_ROOT/container-structure-test test --image $FULL_IMAGE --config $SERVICE_TEST_FILE"
+# The checks above only read the Dockerfile. The ones below need the built image,
+# so they are skipped when Docker is unavailable or the image is not present.
+if ! command -v docker &> /dev/null || ! docker ps > /dev/null 2>&1; then
+  echo "ℹ️  INFO: Docker not accessible, skipping image-level tests"
+elif ! docker image inspect "$FULL_IMAGE" > /dev/null 2>&1; then
+  echo "ℹ️  INFO: Image $FULL_IMAGE not found locally, skipping image-level tests"
+  echo "   Build it first: ./build.py --service=$SERVICE"
+else
+  echo "🐳 Running image-level tests against $FULL_IMAGE..."
+
+  IMAGE_CMD=$(docker inspect -f '{{json .Config.Cmd}}' "$FULL_IMAGE")
+
+  # gh-3: build.py renders the templates through string.Template.safe_substitute,
+  # so a bare ${JAVA_OPTS} in the template CMD is replaced at GENERATION time and
+  # the computed defaults are frozen into the image. The container then ignores
+  # whatever JAVA_OPTS the compose environment sets, which silently disabled every
+  # *_max_memory / *_min_memory override. The CMD has to keep the literal for the
+  # shell to expand at container start.
+  #
+  # This lives here rather than in common-tests/: a commandTest runs its own
+  # command and never touches the image CMD, and metadataTest.cmd matches the CMD
+  # exactly (no regex), which a file shared by every service cannot do.
+  if [[ $IMAGE_CMD == *'${JAVA_OPTS}'* ]]; then
+    echo "✅ PASS: CMD keeps a literal \${JAVA_OPTS} to expand at container start"
+    test_count=$((test_count + 1))
+  else
+    echo "❌ FAIL: CMD has no \${JAVA_OPTS}, so runtime overrides are never read"
+    echo "   CMD: $IMAGE_CMD"
+    failed_tests+=("java-opts-cmd-expands")
+  fi
+
+  # Same regression seen from the other side.
+  if [[ $IMAGE_CMD =~ -Xm[sx][0-9]|-Xss[0-9] ]]; then
+    echo "❌ FAIL: CMD has JVM memory flags baked in at build time"
+    echo "   CMD: $IMAGE_CMD"
+    failed_tests+=("java-opts-cmd-not-baked")
+  else
+    echo "✅ PASS: CMD has no JVM memory flags baked in"
+    test_count=$((test_count + 1))
+  fi
+
+  # End-to-end: run the image's own CMD with an override in the environment and
+  # ask the JVM what heap it actually got. PrintFlagsFinal reports at JVM init,
+  # before the app starts, so the container is killed straight after.
+  echo "   ⏳ Starting container to check the override reaches the JVM..."
+  runtime_out=$(timeout 180 docker run --rm \
+    -e JAVA_OPTS="-Xmx128m -XX:+PrintFlagsFinal" \
+    "$FULL_IMAGE" 2>&1 | grep -m1 'MaxHeapSize' || true)
+
+  if [[ $runtime_out == *"$JAVA_OPTS_PROBE_BYTES"* ]]; then
+    echo "✅ PASS: JAVA_OPTS override reaches the JVM (MaxHeapSize=$JAVA_OPTS_PROBE_BYTES)"
+    test_count=$((test_count + 1))
+  else
+    echo "❌ FAIL: JAVA_OPTS override did not reach the JVM"
+    echo "   Expected MaxHeapSize=$JAVA_OPTS_PROBE_BYTES, got: ${runtime_out:-<no MaxHeapSize in output>}"
+    failed_tests+=("java-opts-runtime")
+  fi
+
+  # Structural tests, if the vendored binary is there.
+  if [ -x "$REPO_ROOT/container-structure-test" ]; then
+    CST_CONFIG="$COMMON_TEST_FILE"
+    [ -f "$SERVICE_TEST_FILE" ] && CST_CONFIG="$SERVICE_TEST_FILE"
+    echo "   ⏳ container-structure-test with $(basename "$CST_CONFIG")..."
+    if "$REPO_ROOT/container-structure-test" test --image "$FULL_IMAGE" --config "$CST_CONFIG" > /dev/null 2>&1; then
+      echo "✅ PASS: container-structure-test"
+      test_count=$((test_count + 1))
+    else
+      echo "❌ FAIL: container-structure-test (rerun without -q for detail):"
+      echo "   $REPO_ROOT/container-structure-test test --image $FULL_IMAGE --config $CST_CONFIG"
+      failed_tests+=("container-structure-test")
+    fi
+  else
+    echo "⚠️  WARNING: container-structure-test binary not found, skipping structural tests"
+  fi
 fi
 
 echo ""

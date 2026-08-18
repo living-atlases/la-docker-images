@@ -28,6 +28,9 @@ pipeline {
             steps {
                 script {
                     sh './scripts/update_jenkinsfile.py --check'
+                    // Stdlib only, no Docker: catches a template that bakes
+                    // JAVA_OPTS into the image before anything gets built.
+                    sh './scripts/test-dockerfile-generation.py'
                 }
             }
         }

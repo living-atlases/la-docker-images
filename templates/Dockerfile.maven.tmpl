@@ -264,8 +264,18 @@ RUN chmod 1777 /tmp
 USER "${SERVICE_USER}"
 
 # Execute service
-# Use shell form to allow variable expansion
-CMD java ${JAVA_OPTS} -jar "/opt/atlas/${APP_ARTIFACT}/app.${EXTENSION}" ${APP_ARGS}
+# Use shell form to allow variable expansion.
+#
+# $${JAVA_OPTS} (not ${JAVA_OPTS}): build.py renders this template through
+# string.Template.safe_substitute, so a bare ${JAVA_OPTS} is replaced at
+# GENERATION time and the computed defaults end up baked into the image CMD.
+# The container then ignores whatever JAVA_OPTS the compose environment sets,
+# which silently disabled every *_max_memory / *_min_memory override (gh-3).
+# The $$ escapes to a literal $, so the shell expands it at container start,
+# picking up the ENV default above unless the environment overrides it.
+# ${APP_ARTIFACT} stays bare on purpose: it is not in build.py's mapping, so
+# safe_substitute leaves it alone and it likewise resolves at runtime.
+CMD java $${JAVA_OPTS} -jar "/opt/atlas/${APP_ARTIFACT}/app.${EXTENSION}" ${APP_ARGS}
 
 ARG BUILD_DATE
 ARG VCS_REF
