@@ -226,3 +226,39 @@ This repository includes a `Jenkinsfile` that automates image building in a CI/C
 ### Automatic Synchronization
 
 The Jenkinsfile parameter descriptions (the list of available services) are automatically kept in sync with `services-definition.yml` via the `./scripts/update_jenkinsfile.py` script. This script runs as the first stage of the pipeline to ensure documentation matches the code.
+
+### Rebuilding many tags at once
+
+`N_TAGS=10` expands to about 214 (service, version) pairs, of which ~184 have a
+runnable artifact. At roughly 7 minutes an image that is over 20 hours, and the
+job sets `disableConcurrentBuilds()`, so it does not fit in a single run. Split it
+using the `SERVICE` parameter, which already takes a comma-separated list. Each
+group below is 20-40 images, i.e. 2-4 hours, and can be retried on its own.
+
+| # | `SERVICE` | Images |
+|---|---|---|
+| 1 | `collectory,ala-hub,biocache-service` | 25 |
+| 2 | `ala-bie-hub,bie-index,image-service` | 27 |
+| 3 | `specieslist-webapp,regions,dashboard` | 21 |
+| 4 | `cas,cas-management,userdetails,apikey` | 33 |
+| 5 | `spatial-hub,spatial-service` | 20 |
+| 6 | `alerts,doi-service,logger-service` | 30 |
+| 7 | `biocollect,ecodata` | 20 |
+| 8 | `sds-webapp2,pdfgen,data-quality-filter-service` | 8 |
+
+Run each with `N_TAGS=10, PUSH=true`. Check the summary that closes every run:
+
+```
+📊 Summary: 25 built, 3 skipped, 0 failed
+```
+
+Versions whose published artifact declares no `Main-Class` are skipped with a
+reason — `java -jar` cannot start those, so there is no image to build. A failure
+on the newest version of a service fails the job; historical ones are reported
+and the run continues. Use `--strict` (build.py) to get all-or-nothing back.
+
+Start with a dry run to see the whole matrix without building anything:
+
+```bash
+./venv/bin/python build.py --all --n-tags=10 --check
+```

@@ -17,8 +17,16 @@ from string import Template
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEMPLATES = ["Dockerfile.maven.tmpl", "Dockerfile.gradle.tmpl"]
 
-# What build.py computes when a service declares no memory flags of its own.
-BAKED_JAVA_OPTS = "-Xmx2g -Xms2g -Xss512k -Djava.awt.headless=true"
+# A marker, NOT a copy of build.py's default. build.py computes JAVA_OPTS from
+# defaults plus per-service memory settings and extra_params (build.py:557-598),
+# and importing it here is not an option: it needs yaml and docopt, while this
+# runs in Validate Sync before the venv exists. Hard-coding the real default
+# instead would drift, and the test would stay green while build.py regressed.
+#
+# What matters does not depend on the value at all: whatever build.py computes
+# must land in ENV and must NOT land in the CMD. Using a value that could never
+# be a real default makes both halves unambiguous.
+PROBE_JAVA_OPTS = "-Xmx1234m -Xms1234m -Dprobe.marker=gh-3"
 
 failures = []
 
@@ -35,7 +43,7 @@ def render(template_name):
     # Same call build.py makes, with the placeholders that matter here.
     return Template(content).safe_substitute(
         {
-            "JAVA_OPTS": BAKED_JAVA_OPTS,
+            "JAVA_OPTS": PROBE_JAVA_OPTS,
             "EXTENSION": "war",
             "APP_ARGS": "",
             "SERVICE_USER": "userdetails",
@@ -73,12 +81,19 @@ for template_name in TEMPLATES:
         f"{template_name}: CMD has JVM memory flags baked in at build time, so "
         f"runtime overrides cannot win. Got: {cmd}",
     )
-
-    # The build-time value still belongs in ENV, as the default the environment
-    # overrides. Losing it would drop the per-service tuning build.py computes.
+    # The same thing said directly: whatever build.py computed must not have been
+    # substituted into the CMD. This is what actually failed before the fix.
     check(
-        f'ENV JAVA_OPTS="{BAKED_JAVA_OPTS}"' in rendered,
-        f"{template_name}: ENV JAVA_OPTS must keep the value build.py computes",
+        PROBE_JAVA_OPTS not in cmd,
+        f"{template_name}: the computed JAVA_OPTS was substituted into the CMD at "
+        f"generation time. Got: {cmd}",
+    )
+
+    # It still belongs in ENV, as the default the environment overrides. Losing it
+    # would silently drop the per-service tuning build.py computes.
+    check(
+        f'ENV JAVA_OPTS="{PROBE_JAVA_OPTS}"' in rendered,
+        f"{template_name}: ENV JAVA_OPTS must carry the value build.py computes",
     )
 
     # APP_ARTIFACT is deliberately not in build.py's mapping: it resolves at
