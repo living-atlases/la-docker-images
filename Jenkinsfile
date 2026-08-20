@@ -12,6 +12,7 @@ pipeline {
         string(name: 'SKIP_SERVICES', defaultValue: '', description: "Service(s) to skip (comma-separated). Available: ala-bie-hub, ala-hub, ala-namematching-server, ala-sensitive-data-server, alerts, apikey, bie-index, biocache-service, biocollect, cas, cas-management, collectory, dashboard, data-quality-filter-service, doi-service, ecodata, i18n, image-service, la-pipelines, logger-service, pdfgen, regions, sds-static-home, sds-webapp2, spatial-hub, spatial-service, specieslist-webapp, userdetails")
         string(name: 'N_TAGS', defaultValue: '1', description: 'Number of recent tags to build if version is latest')
         string(name: 'TAG', defaultValue: '', description: 'Version/Tag to build (leave empty for latest/develop)')
+        string(name: 'LIST_TAGS', defaultValue: '', description: 'Build exactly these versions, comma-separated (e.g. 1.3,1.4,1.5). For backfilling old tags: N_TAGS can only take the N newest, so reaching an old version means rebuilding everything above it. Does not move `latest`.')
         string(name: 'BRANCH', defaultValue: '', description: 'Git branch for repo-branch builds (optional)')
         booleanParam(name: 'PUSH', defaultValue: true, description: 'Push images to Docker Hub')
         booleanParam(name: 'DRY_RUN', defaultValue: false, description: 'Dry Run (generate Dockerfiles only)')
@@ -76,6 +77,7 @@ pipeline {
                     }
 
                     if (params.TAG) args << "--tag=${params.TAG}"
+                    if (params.LIST_TAGS) args << "--list-tags=${params.LIST_TAGS}"
                     if (params.BRANCH) args << "--branch=${params.BRANCH}"
                     if (params.DRY_RUN) args << "--dry-run"
                     if (params.FORCE_PULL) args << "--pull"
@@ -131,6 +133,20 @@ pipeline {
     post {
         always {
             cleanWs()
+            // Every rebuild of a tag leaves the image it replaced untagged, and
+            // nothing here ever collected them. A --n-tags=10 sweep over 23
+            // services left 3102 dangling images and filled the agent's 295GB
+            // containerd volume, which then failed every build on the box until
+            // it was pruned by hand (126GB reclaimed).
+            //
+            // Dangling images only: tagged images are the layer cache that keeps
+            // subsequent builds cheap, and `prune -a` would take those too, on a
+            // shared agent. Build cache is trimmed at a week, so recent layers
+            // survive. Never fails the build -- a full disk should surface as the
+            // build error it causes, not as a cleanup step going red.
+            sh 'docker image prune -f || true'
+            sh 'docker builder prune -f --filter until=168h || true'
+            sh 'df -h /var/lib/containerd | tail -1 || true'
         }
         success {
             echo "Build successful!"

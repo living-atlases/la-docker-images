@@ -38,7 +38,12 @@ Options:
   # Version Selection
   --tag=<tag>             Force a specific version/tag for the build.
                           If not specified, defaults to 'latest' or 'develop'.
-  --list-tags=<tags>      Build multiple versions (comma-separated).
+  --list-tags=<tags>      Build exactly these versions, comma-separated
+                          (e.g. 1.3,1.4,1.5). Where --n-tags can only take the N
+                          newest, this reaches an old version without rebuilding
+                          everything above it. Does not move the `latest` tag.
+                          NOTE: continuation lines here must not start with a
+                          dash -- docopt reads any such line as a new option.
   --n-tags=<n>            Build the last N versions from Nexus [default: 1].
 
   # Build Configuration
@@ -977,6 +982,28 @@ def main():
         # Condition:
         # 1. Method is Nexus
         # 2. Version is 'latest' (meaning user didn't specify a specific version tag)
+        # An explicit list of versions, which is what a backfill needs: build
+        # exactly these and nothing else. --n-tags can only take the N newest, so
+        # reaching an old version means rebuilding everything above it, and every
+        # rebuild of a tag orphans the image it replaces. A --n-tags=10 sweep over
+        # 23 services left 3102 dangling images and filled the agent's disk.
+        list_tags = args.get("--list-tags")
+        if is_nexus and list_tags:
+            versions = [v.strip() for v in list_tags.split(",") if v.strip()]
+            print(f"   ✨ Explicit versions for {name}: {versions}")
+            for v in versions:
+                v_conf = svc_conf.copy()
+                v_conf["version"] = v
+                # No `latest` retag: an explicit list is not a statement about
+                # which version is current, and moving `latest` to whatever
+                # happens to be last in the list would be wrong.
+                #
+                # Best-effort like any other historical build, so one unbuildable
+                # version does not abort a backfill. --strict overrides.
+                v_conf["is_newest"] = False
+                expanded_build_list.append((name, v_conf))
+            continue
+
         if is_nexus and version == "latest":
             n_tags = int(args.get("--n-tags", 1))
             update_metadata = args.get("--update-metadata", False)

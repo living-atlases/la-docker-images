@@ -11,6 +11,8 @@ Run: python3 scripts/test_build_logic.py
 
 import io
 import json
+import pathlib
+import re
 import os
 import sys
 import threading
@@ -406,6 +408,44 @@ class SeverityTest(unittest.TestCase):
             {"name": "apikey", "version": "1.7.0", "is_newest": True},
         ]
         self.assertEqual(len(self._fatal(entries)), 1)
+
+
+class DocoptOptionsTest(unittest.TestCase):
+    """build.py's CLI is parsed from its own docstring, so prose can break it."""
+
+    @staticmethod
+    def _options_block():
+        source = (pathlib.Path(__file__).resolve().parent.parent / "build.py").read_text()
+        doc = source.split('"""')[1]
+        return doc.split("Options:", 1)[1]
+
+    def test_no_continuation_line_starts_with_a_dash(self):
+        # docopt reads ANY line in Options: whose first non-space character is a
+        # dash as a new option definition. A wrapped description beginning with
+        # an example like "--list-tags=1.3,1.4" therefore registers a second
+        # option, and the real one stops resolving:
+        #     "--n-tags is not a unique prefix: --n-tags, --n-tags?"
+        # It breaks a flag that the edit never touched, which is what makes it
+        # worth a test rather than a comment.
+        offenders = []
+        for line in self._options_block().splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("-"):
+                continue
+            # A real definition is indented by 2; docopt's own continuation
+            # indent is deeper, and that is exactly where the trap is.
+            if len(line) - len(line.lstrip()) > 2:
+                offenders.append(stripped[:60])
+        self.assertEqual(offenders, [], "continuation lines must not start with '-'")
+
+    def test_every_documented_flag_is_read(self):
+        # --list-tags sat in this docstring for months with no implementation:
+        # docopt accepted it and nothing ever looked at the value.
+        source = (pathlib.Path(__file__).resolve().parent.parent / "build.py").read_text()
+        documented = set(re.findall(r"^  (--[a-z-]+)", self._options_block(), re.MULTILINE))
+        for flag in documented - {"--help", "--version"}:
+            with self.subTest(flag=flag):
+                self.assertIn(f'"{flag}"', source, f"{flag} is documented but never read")
 
 
 if __name__ == "__main__":
