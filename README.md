@@ -220,6 +220,9 @@ This repository includes a `Jenkinsfile` that automates image building in a CI/C
 - `SKIP_SERVICES`: Services to exclude from the build.
 - `N_TAGS`: Number of recent versions to build if no specific tag is provided.
 - `TAG`: Specific version to build (overrides N_TAGS).
+- `LIST_TAGS`: Build exactly these versions, comma-separated. Unlike `N_TAGS` it
+  reaches an old version without rebuilding everything above it, and does not move
+  `latest`. This is what a backfill should use.
 - `BRANCH`: Git branch for `repo-branch` builds.
 - `PUSH`: Whether to push images to Docker Hub after a successful build.
 
@@ -229,36 +232,81 @@ The Jenkinsfile parameter descriptions (the list of available services) are auto
 
 ### Rebuilding many tags at once
 
-`N_TAGS=10` expands to about 214 (service, version) pairs, of which ~184 have a
-runnable artifact. At roughly 7 minutes an image that is over 20 hours, and the
-job sets `disableConcurrentBuilds()`, so it does not fit in a single run. Split it
-using the `SERVICE` parameter, which already takes a comma-separated list. Each
-group below is 20-40 images, i.e. 2-4 hours, and can be retried on its own.
+Use `LIST_TAGS`, not `N_TAGS`. `N_TAGS=N` always takes the N *newest* versions, so
+reaching an old one means rebuilding everything above it — and every rebuild of a tag
+leaves the image it replaced untagged. A `N_TAGS=10` sweep across 23 services once left
+3102 dangling images, filled the agent's 295GB volume and failed every build on the box
+until it was pruned by hand.
 
-| # | `SERVICE` | Images |
-|---|---|---|
-| 1 | `collectory,ala-hub,biocache-service` | 25 |
-| 2 | `ala-bie-hub,bie-index,image-service` | 27 |
-| 3 | `specieslist-webapp,regions,dashboard` | 21 |
-| 4 | `cas,cas-management,userdetails,apikey` | 33 |
-| 5 | `spatial-hub,spatial-service` | 20 |
-| 6 | `alerts,doi-service,logger-service` | 30 |
-| 7 | `biocollect,ecodata` | 20 |
-| 8 | `sds-webapp2,pdfgen,data-quality-filter-service` | 8 |
-
-Run each with `N_TAGS=10, PUSH=true`. Check the summary that closes every run:
+`LIST_TAGS` builds exactly the versions listed and does not move `latest`:
 
 ```
-📊 Summary: 25 built, 3 skipped, 0 failed
+SERVICE=spatial-service
+LIST_TAGS=1.1.1,2.1.0,2.1.1,2.1.2,2.1.3,2.1.4,2.1.5,2.2.0,3.0.0
+PUSH=true
 ```
 
-Versions whose published artifact declares no `Main-Class` are skipped with a
-reason — `java -jar` cannot start those, so there is no image to build. A failure
-on the newest version of a service fails the job; historical ones are reported
-and the run continues. Use `--strict` (build.py) to get all-or-nothing back.
+One service per run, since `LIST_TAGS` applies to every service in `SERVICE`. To find
+what is actually missing rather than guessing, compare the Nexus versions against what
+Docker Hub already has (`hub.docker.com/v2/repositories/livingatlases/<svc>/tags`) — the
+Jenkins console buffers Python's output and will look stalled when it is not.
 
 Start with a dry run to see the whole matrix without building anything:
 
 ```bash
 ./venv/bin/python build.py --all --n-tags=10 --check
 ```
+
+Every run closes with a summary:
+
+```
+📊 Summary: 25 built, 3 skipped, 0 failed
+```
+
+Versions whose published artifact declares no `Main-Class` are skipped with a reason —
+`java -jar` cannot start those, so there is no image to build. About 30 of the 214 pairs
+at `N_TAGS=10` are in that state permanently (plain Grails-2 era wars). A failure on the
+newest version of a service fails the job; historical ones are reported and the run
+continues. Use `--strict` (build.py) for all-or-nothing.
+
+## Agent maintenance
+
+The pipeline's `post` collects dangling images and trims build cache older than a week,
+which stops the pathological growth above. It does **not** stop normal growth: every run
+legitimately adds tagged images that stay forever, roughly 11 per service (10 versions
+plus `latest`).
+
+Measured after a full backfill:
+
+```
+Images        216   141.8GB   136.2GB reclaimable (95%)
+Build Cache   945    86.12GB   22.67GB reclaimable
+```
+
+Those 136GB are our own images, already pushed to Docker Hub, on an agent that never runs
+a container. They are safe to drop, and dropping them does not slow anything down: what
+makes a rebuild cheap is the **BuildKit cache** and the **base images** it starts `FROM`.
+A finished `livingatlases/collectory:6.0.0` in the local store is output, not cache.
+
+What must survive — a blanket `docker system prune -a` would take these, and the next
+build would pay to re-pull and rebuild them:
+
+| | |
+|---|---|
+| `eclipse-temurin:{8,11,17,21}-jre-jammy` | runtime bases |
+| `gradle:7-jdk*-jammy` | builder bases |
+| `gradle-builder:jdk*`, `maven-builder:jdk*` | built here, **never pushed anywhere** |
+| `cypress/browsers`, `gbif-taxonomy-for-la` | other jobs on the same agent |
+
+See issue #4. Also worth capping the build cache by size rather than age
+(`docker builder prune --keep-storage=40GB`), since the current one-week trim does not
+bound growth.
+
+### Careful with Jenkins "Replay"
+
+Replaying a build with a cut-down script rewrites the job's configuration, because a
+Declarative pipeline applies its own `properties` to the job. A replay script without
+`parameters {}` and `options {}` silently drops every parameter definition and re-enables
+concurrent builds — after which triggered builds run with defaults and the parameters you
+passed are discarded without warning. If you replay for a one-off diagnostic, keep those
+blocks even if the script does not use them.
