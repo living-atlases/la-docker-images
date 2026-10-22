@@ -52,6 +52,11 @@ FROM builder-${BUILD_METHOD} AS artifact-src
 # ── Runtime stage ─────────────────────────────────────────────────────────────
 FROM eclipse-temurin:${JAVA_VERSION}-jre-jammy
 
+# eclipse-temurin may still trust CA roots distrusted after a compromise
+# (eMudhra, 2026-10-17); build.py puts the script in the build context.
+COPY scripts/ca-distrust.sh /usr/local/bin/ca-distrust.sh
+RUN sh /usr/local/bin/ca-distrust.sh
+
 ARG BUILD_METHOD=debian-package
 ARG VERSION=latest
 ARG LA_APT_REPO=unstable

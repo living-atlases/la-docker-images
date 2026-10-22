@@ -214,6 +214,12 @@ RUN set -e; \
 # ============================================
 FROM ${JAVA_BASE_IMAGE}
 
+# The base image may still trust CA roots distrusted after a compromise
+# (eMudhra, 2026-10-17): fix the system store and the JRE cacerts by
+# fingerprint and fail the build if any store still has them.
+COPY scripts/ca-distrust.sh /usr/local/bin/ca-distrust.sh
+RUN sh /usr/local/bin/ca-distrust.sh
+
 ARG SERVICE_USER=${SERVICE_NAME}
 ARG APP_ARTIFACT=${ARTIFACT_ID}
 ARG LOG_DIR=${LOG_DIR}

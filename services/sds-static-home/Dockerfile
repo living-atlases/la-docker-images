@@ -25,7 +25,7 @@ ARG COMMIT=HEAD
 ARG CACHE_BYPASS=0
 
 # ---------- Stage 1: build the Vite/React SPA ----------
-FROM node:20-bookworm-slim AS builder
+FROM node:22-bookworm-slim AS builder
 
 ARG REPO=${REPO}
 ARG BRANCH=${BRANCH}

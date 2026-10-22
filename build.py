@@ -789,6 +789,12 @@ def build_service(service_name, service_config, dry_run=False, no_cache=False):
             f"Warning: {src_script} not found. Build might fail if using Nexus method."
         )
 
+    # The runtime stage runs scripts/ca-distrust.sh (CA roots distrusted after a compromise).
+    shutil.copy(
+        os.path.join(TEMPLATES_DIR, "scripts", "ca-distrust.sh"),
+        os.path.join(scripts_dest, "ca-distrust.sh"),
+    )
+
     # Copy settings.xml if it exists in templates, else create default
     src_settings = os.path.join(TEMPLATES_DIR, "settings.xml")
     dest_settings = os.path.join(build_path, "settings.xml")
