@@ -63,6 +63,9 @@ ARG REPO=${REPO}
 
 USER root
 
+# CVE-2026-111497: the base still ships brotli-libs 1.2.0 (decoder OOB write); fixed in 1.2.1
+RUN apk upgrade --no-cache brotli-libs
+
 # Built SPA, owned by the runtime user (101) so the entrypoint can sed-substitute tokens
 COPY --from=builder --chown=101:101 /src/${BUILD_DIR}/dist /usr/share/nginx/html
 
