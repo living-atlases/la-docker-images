@@ -448,5 +448,39 @@ class DocoptOptionsTest(unittest.TestCase):
                 self.assertIn(f'"{flag}"', source, f"{flag} is documented but never read")
 
 
+class RuntimeSecurityUpgradeTest(unittest.TestCase):
+    """Every runtime stage applies pending distro updates and checks brotli.
+
+    Base images lag behind the distro: image-service:4.2.0-SNAPSHOT still had
+    libbrotli1 1.0.9-2build6 (CVE-2026-111497) after a --pull rebuild, so the
+    upgrade has to happen in our own runtime stage, not be left to the base.
+    """
+
+    ROOT = pathlib.Path(__file__).resolve().parent.parent
+    RUNTIME_DOCKERFILES = (
+        "templates/Dockerfile.gradle.tmpl",
+        "templates/Dockerfile.maven.tmpl",
+        "services/la-pipelines/Dockerfile",
+    )
+
+    def test_each_runtime_stage_runs_the_upgrade(self):
+        for rel in self.RUNTIME_DOCKERFILES:
+            with self.subTest(dockerfile=rel):
+                text = (self.ROOT / rel).read_text()
+                # The runtime stage is the one after the last FROM.
+                runtime = re.split(r"^FROM ", text, flags=re.MULTILINE)[-1]
+                self.assertIn("COPY scripts/security-upgrade.sh", runtime)
+                self.assertRegex(runtime, r"(?m)^RUN .*sh /usr/local/bin/security-upgrade\.sh")
+                # Without a changing build arg the upgrade layer comes from cache
+                # and never sees a fix published after the first build.
+                self.assertRegex(runtime, r"(?m)^ARG CACHE_BYPASS")
+                self.assertLess(runtime.index("security-upgrade.sh"), runtime.index("ca-distrust.sh"))
+
+    def test_build_py_puts_the_script_in_the_context(self):
+        source = (self.ROOT / "build.py").read_text()
+        self.assertIn('"security-upgrade.sh"', source)
+        self.assertTrue((self.ROOT / "templates/scripts/security-upgrade.sh").is_file())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

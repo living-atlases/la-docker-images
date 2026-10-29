@@ -52,6 +52,14 @@ FROM builder-${BUILD_METHOD} AS artifact-src
 # ── Runtime stage ─────────────────────────────────────────────────────────────
 FROM eclipse-temurin:${JAVA_VERSION}-jre-jammy
 
+# Base images lag behind the distro's security updates (libbrotli1 for
+# CVE-2026-111497 on 2026-10-29): upgrade every package and fail the build if
+# brotli is still below the fixed build. CACHE_BYPASS (a timestamp from
+# build.py) keeps this layer from being reused from cache.
+ARG CACHE_BYPASS=0
+COPY scripts/security-upgrade.sh /usr/local/bin/security-upgrade.sh
+RUN echo "cache bypass: ${CACHE_BYPASS}" && sh /usr/local/bin/security-upgrade.sh
+
 # eclipse-temurin may still trust CA roots distrusted after a compromise
 # (eMudhra, 2026-10-17); build.py puts the script in the build context.
 COPY scripts/ca-distrust.sh /usr/local/bin/ca-distrust.sh

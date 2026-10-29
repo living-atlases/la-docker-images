@@ -107,6 +107,9 @@ pipeline {
             }
             steps {
                 script {
+                    // security-upgrade.sh, which every runtime stage runs, in real
+                    // base images: a vulnerable brotli must fail, the upgrade fix it.
+                    sh './scripts/test-security-upgrade.sh'
                     // A sample, not all ~214 images: each of these starts a
                     // container to check a JAVA_OPTS override actually reaches
                     // the JVM (gh-3), which costs a minute or so per image.
