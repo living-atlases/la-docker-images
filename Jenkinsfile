@@ -83,15 +83,42 @@ pipeline {
                     if (params.FORCE_PULL) args << "--pull"
                     if (params.PUSH && !params.DRY_RUN) args << "--push"
 
-                    def buildCmd = "./venv/bin/python build.py ${args.join(' ')}"
+                    // -u: build.py's progress lines are block-buffered otherwise,
+                    // so in an 8-hour run they all flush at once with a single
+                    // timestamp. In #266 that made it impossible to tell which
+                    // push each registry error belonged to.
+                    def buildCmd = "./venv/bin/python -u build.py ${args.join(' ')}"
 
                     if (params.PUSH && !params.DRY_RUN) {
-                        withCredentials([usernamePassword(credentialsId: env.DOCKER_REGISTRY_CREDS, usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
-                            sh 'echo $DH_PASS | docker login -u $DH_USER --password-stdin'
-                            try {
-                                sh buildCmd
-                            } finally {
-                                sh 'docker logout'
+                        // Docker credentials go in the workspace, not in the
+                        // agent's shared ~/.docker/config.json. `docker logout`
+                        // there is global: any other job on this agent that logs
+                        // out while we are still pushing leaves every later push
+                        // with "insufficient_scope: authorization failed" -- 4
+                        // images lost in #266, 10 in #265, and this job's own
+                        // logout was doing the same to them. cleanWs() in post
+                        // takes the directory away with the workspace.
+                        withEnv(["DOCKER_CONFIG=${env.WORKSPACE}/.docker"]) {
+                            withCredentials([usernamePassword(credentialsId: env.DOCKER_REGISTRY_CREDS, usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+                                // DOCKER_CONFIG is also where the CLI looks for
+                                // its plugins, so a bare new directory would hide
+                                // a per-user buildx and drop every build back to
+                                // the legacy builder, where --mount=type=cache
+                                // does not exist. Keep whatever the agent has.
+                                sh '''
+                                    mkdir -p "$DOCKER_CONFIG"
+                                    chmod 700 "$DOCKER_CONFIG"
+                                    if [ -d "$HOME/.docker/cli-plugins" ] && [ ! -e "$DOCKER_CONFIG/cli-plugins" ]; then
+                                        ln -s "$HOME/.docker/cli-plugins" "$DOCKER_CONFIG/cli-plugins"
+                                    fi
+                                    docker buildx version || echo "no buildx plugin: builds will use the legacy builder"
+                                '''
+                                sh 'echo $DH_PASS | docker login -u $DH_USER --password-stdin'
+                                try {
+                                    sh buildCmd
+                                } finally {
+                                    sh 'docker logout'
+                                }
                             }
                         }
                     } else {

@@ -9,6 +9,7 @@ The container-structure tests (common-tests/, run-container-tests.sh) cover the
 built image instead, but they need Docker and are not part of the pipeline.
 """
 
+import glob
 import os
 import re
 import sys
@@ -103,10 +104,41 @@ for template_name in TEMPLATES:
         f"{template_name}: CMD must resolve ${{APP_ARTIFACT}} at runtime. Got: {cmd}",
     )
 
+# ── Hand-written service Dockerfiles ─────────────────────────────────────────
+# Not rendered from a template, so the checks above never see them.
+service_dockerfiles = sorted(
+    path
+    for path in glob.glob(os.path.join(REPO_ROOT, "services", "*", "Dockerfile"))
+)
+
+for path in service_dockerfiles:
+    name = os.path.relpath(path, REPO_ROOT)
+    with open(path, "r") as handle:
+        body = handle.read()
+
+    # A continuation-folded RUN is one logical command; join it before looking.
+    commands = re.sub(r"\\\n\s*", " ", body).split("\n")
+    for command in commands:
+        if " mvn " not in f" {command} " or not re.search(r"\s-T\s*\d", command):
+            continue
+        # build #266: 10 threads share one local repository, and with a cold
+        # cache mount a slow download held the resolver's exclusive lock past
+        # its 900s limit, killing the image after 44 minutes of work. Nothing
+        # outside the container wants that lock, so the wait must be generous.
+        check(
+            "-Daether.syncContext.named.time=" in command,
+            f"{name}: a parallel mvn (-T) must set "
+            f"-Daether.syncContext.named.time, or the resolver's lock timeout "
+            f"fails the build on a cold /root/.m2",
+        )
+
 if failures:
     print("Dockerfile template checks FAILED:\n")
     for failure in failures:
         print(f"  - {failure}")
     sys.exit(1)
 
-print(f"Dockerfile template checks passed ({len(TEMPLATES)} templates).")
+print(
+    f"Dockerfile template checks passed ({len(TEMPLATES)} templates, "
+    f"{len(service_dockerfiles)} service Dockerfiles)."
+)

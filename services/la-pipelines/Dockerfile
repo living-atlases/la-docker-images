@@ -21,6 +21,12 @@ COPY settings.xml /build/settings.xml
 RUN git clone --branch ${BRANCH} ${REPO} . && \
   if [ "${COMMIT}" != "HEAD" ]; then git checkout ${COMMIT}; fi
 
+# -T 10 builds the reactor with 10 threads against one local repository, and
+# the resolver takes an exclusive lock per artifact batch. In build #266 three
+# modules got through after waiting 13:13 each and Pipelines :: Sdks :: Models
+# gave up at the 900s lock limit, failing the image 44 minutes in. Whatever
+# held the lock that long, nothing outside this container competes for it, so
+# waiting is cheaper than losing the build.
 RUN --mount=type=cache,target=/root/.m2 \
   mvn --batch-mode --no-transfer-progress \
   -s /build/settings.xml \
@@ -29,6 +35,7 @@ RUN --mount=type=cache,target=/root/.m2 \
   -Daether.connector.http.retryHandler.count=5 \
   -Daether.connector.connectTimeout=30000 \
   -Daether.connector.requestTimeout=180000 \
+  -Daether.syncContext.named.time=3600 \
   clean install \
   -Dspotless.check.skip=true -Dmaven.test.skip=true -Dmaven.site.skip=true -Dmaven.javadoc.skip=true \
   -Dproject.build.outputTimestamp=${SOURCE_DATE_EPOCH} \
@@ -41,6 +48,7 @@ RUN --mount=type=cache,target=/root/.m2 \
   -Daether.connector.http.retryHandler.count=5 \
   -Daether.connector.connectTimeout=30000 \
   -Daether.connector.requestTimeout=180000 \
+  -Daether.syncContext.named.time=3600 \
   clean package -P livingatlas-artifacts \
   -Dspotless.check.skip=true -Dmaven.test.skip=true -Dmaven.site.skip=true -Dmaven.javadoc.skip=true \
   -Dproject.build.outputTimestamp=${SOURCE_DATE_EPOCH} \

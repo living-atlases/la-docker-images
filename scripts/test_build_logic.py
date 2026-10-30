@@ -507,5 +507,49 @@ class ReleaseVersionSortTest(unittest.TestCase):
         self.assertIn("artifact_resolver.sort_release_versions(versions)[-n:]", source)
 
 
+class JenkinsfileDockerAuthTest(unittest.TestCase):
+    """`docker login` and `docker logout` write one file per agent user, so the
+    pipeline has to keep its credentials out of the shared one."""
+
+    @staticmethod
+    def _jenkinsfile():
+        text = (pathlib.Path(__file__).resolve().parent.parent / "Jenkinsfile").read_text()
+        # Comments here talk about `docker login`/`docker logout`; only the
+        # steps count.
+        return "\n".join(
+            line for line in text.splitlines() if not line.strip().startswith("//")
+        )
+
+    def test_login_uses_a_workspace_scoped_docker_config(self):
+        # #266 lost 4 images and #265 lost 10 to "insufficient_scope:
+        # authorization failed" on pushes that had been working for hours:
+        # another job on the agent ran `docker logout` against the shared
+        # /var/lib/jenkins/.docker/config.json mid-run. A retry cannot help --
+        # the credentials are gone -- so the config has to be per-build.
+        text = self._jenkinsfile()
+        self.assertIn(
+            "DOCKER_CONFIG=${env.WORKSPACE}",
+            text,
+            "docker credentials must live in the workspace, not in ~/.docker",
+        )
+        for match in re.finditer(r"docker log(?:in|out)", text):
+            self.assertLess(
+                text.index("DOCKER_CONFIG=${env.WORKSPACE}"),
+                match.start(),
+                f"'{match.group(0)}' runs before DOCKER_CONFIG is set, so it "
+                f"reads and writes the agent's shared config",
+            )
+
+    def test_build_py_runs_unbuffered(self):
+        # Without -u, build.py's progress lines land in the log in one block
+        # hours later, all with the same timestamp, and a registry error cannot
+        # be matched to the image it belongs to.
+        self.assertRegex(
+            self._jenkinsfile(),
+            r"venv/bin/python -u build\.py",
+            "build.py must run unbuffered so its output interleaves with docker's",
+        )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
