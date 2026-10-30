@@ -63,6 +63,10 @@ _BOOTABLE_CLASSIFIERS = ("exec", "all", "boot")
 
 _MAIN_CLASS_RE = re.compile(r"^Main-Class:", re.MULTILINE)
 
+# 5.14 and the rebuild suffix of 6.5.6-5. Anything else in Nexus metadata is an old
+# one-off (4.2-SNAPSHOT-paratoo, 2.5-MDBA) and was never a release to build.
+_RELEASE_VERSION_RE = re.compile(r"^(\d+(?:\.\d+)*)(?:-(\d+))?$")
+
 
 class TransientResolveError(Exception):
     """Nexus could not be reached. Distinct from 'this version has nothing usable'
@@ -120,6 +124,20 @@ class _HttpRangeFile(io.RawIOBase):
         self.bytes_read += len(data)
         self.pos += len(data)
         return data
+
+
+def sort_release_versions(versions):
+    """Keep the release versions, oldest first, comparing numbers rather than text.
+
+    As text 5.9.2 sorts after 5.14, which is how ecodata:latest got stuck on 5.9.2.
+    """
+    releases = []
+    for version in versions:
+        match = _RELEASE_VERSION_RE.match(version)
+        if match:
+            numbers = tuple(int(part) for part in match.group(1).split("."))
+            releases.append((numbers, int(match.group(2) or 0), version))
+    return [version for _, _, version in sorted(releases)]
 
 
 def _repository_for(version):

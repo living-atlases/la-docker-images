@@ -482,5 +482,30 @@ class RuntimeSecurityUpgradeTest(unittest.TestCase):
         self.assertTrue((self.ROOT / "templates/scripts/security-upgrade.sh").is_file())
 
 
+class ReleaseVersionSortTest(unittest.TestCase):
+    def test_ecodata_5_14_is_newer_than_5_9_2(self):
+        # The real tail of ecodata's metadata, plus the entries that used to send
+        # the whole list to a text sort.
+        versions = ["1.17-SNANPSHOT", "3.2.1-snapshot", "4.2-SNAPSHOT-paratoo",
+                    "5.9", "5.9.1", "5.9.2", "5.10", "5.11", "5.12", "5.13", "5.14"]
+        self.assertEqual(ar.sort_release_versions(versions)[-1], "5.14")
+        self.assertEqual(ar.sort_release_versions(versions)[-2:], ["5.13", "5.14"])
+
+    def test_one_offs_are_never_built(self):
+        versions = ["2.4", "2.5-MDBA", "4.0.1.DQ", "0.3.7-RELEASE", "2.4.PRERELEASE"]
+        self.assertEqual(ar.sort_release_versions(versions), ["2.4"])
+
+    def test_rebuild_suffix_is_kept_and_ordered(self):
+        versions = ["6.5.6-5", "6.5.6-3", "6.5.6", "6.5.5-2", "5.3.12-5"]
+        self.assertEqual(
+            ar.sort_release_versions(versions),
+            ["5.3.12-5", "6.5.5-2", "6.5.6", "6.5.6-3", "6.5.6-5"],
+        )
+
+    def test_build_py_sorts_nexus_versions_with_it(self):
+        source = (pathlib.Path(__file__).resolve().parent.parent / "build.py").read_text()
+        self.assertIn("artifact_resolver.sort_release_versions(versions)[-n:]", source)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

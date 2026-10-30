@@ -521,19 +521,7 @@ def get_nexus_versions(service_name, config, n=1, update_metadata=False):
         # <versioning><versions><version>...</version></versions></versioning>
         versions = [v.text for v in root.findall(".//version")]
 
-        # Filter out snapshots if we are looking for releases
-        # (Though metadata from releases repo shouldn't have them usually)
-
-        # Sort versions
-        try:
-            if deps_utils:
-                versions.sort(key=lambda v: deps_utils.pkg_version.parse(v))
-            else:
-                versions.sort()
-        except Exception:
-            versions.sort()
-
-        return versions[-n:]
+        return artifact_resolver.sort_release_versions(versions)[-n:]
 
     except Exception as e:
         print(f"   ⚠️  Error parsing metadata for {service_name}: {e}")
