@@ -716,6 +716,7 @@ def generate_dockerfile(service_name, config, build_path):
         if str(config.get("java_version")).lower() != "none"
         else "",
         "APP_ARGS": config.get("app_args", ""),
+        "EXTRA_APT_PACKAGES": " ".join(config.get("extra_apt_packages", [])),
         "MAVEN_PROFILES": config.get("maven_profiles", ""),
         "BUILD_DIR": config.get("build_dir", "."),
         "COMMIT": config.get("commit", "HEAD"),

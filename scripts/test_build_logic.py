@@ -507,5 +507,29 @@ class ReleaseVersionSortTest(unittest.TestCase):
         self.assertIn("artifact_resolver.sort_release_versions(versions)[-n:]", source)
 
 
+
+class GradleTemplateRuntimeTest(unittest.TestCase):
+    """pdfgen boots from the generic template: without these it exits on start."""
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+
+    def test_gradle_cmd_passes_app_args(self):
+        template = (self.root / "templates/Dockerfile.gradle.tmpl").read_text()
+        self.assertRegex(template, r'(?m)^CMD java .*app\.\$\{EXTENSION\}" \$\{APP_ARGS\}$')
+
+    def test_gradle_template_installs_extra_packages_as_root(self):
+        template = (self.root / "templates/Dockerfile.gradle.tmpl").read_text()
+        self.assertLess(
+            template.index("${EXTRA_APT_PACKAGES}"), template.index('USER "${SERVICE_USER}"')
+        )
+
+    def test_pdfgen_definition_can_start_and_convert(self):
+        definitions = (self.root / "services-definition.yml").read_text()
+        pdfgen = definitions.split("\n  pdfgen:\n", 1)[1].split("\n  ecodata:\n", 1)[0]
+        self.assertIn("app_args: server /data/pdfgen/config/pdfgen-config.yml", pdfgen)
+        self.assertIn("- libreoffice-writer", pdfgen)
+        self.assertIn("- wkhtmltopdf", pdfgen)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

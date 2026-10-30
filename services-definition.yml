@@ -239,9 +239,19 @@ services:
     artifacts: pdfgen
     classifier: all
     extension: jar
+    port: 8080
+    # Dropwizard, not Spring: it needs the `server <config>` arguments, and it runs soffice
+    # and wkhtmltopdf once per conversion, so they have to be in the image.
+    app_args: server /data/pdfgen/config/pdfgen-config.yml
+    extra_apt_packages:
+      - libreoffice-core
+      - libreoffice-writer
+      - libreoffice-calc
+      - wkhtmltopdf
+      - fonts-liberation
   ecodata:
-    name: ecodata-reporting
-    description: provides reporting service for ecodata
+    name: ecodata
+    description: provides primarily data services for BioCollect applications
     build_tool: gradle
     repository: https://github.com/AtlasOfLivingAustralia/ecodata
     artifacts: ecodata
