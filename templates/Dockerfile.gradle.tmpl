@@ -268,6 +268,13 @@ RUN if ! command -v groupadd > /dev/null; then \
     fi \
     fi
 
+# Tools the app shells out to at runtime (pdfgen runs soffice and wkhtmltopdf).
+RUN if [ -n "${EXTRA_APT_PACKAGES}" ]; then \
+    apt-get update && \
+    apt-get install -y --no-install-recommends ${EXTRA_APT_PACKAGES} && \
+    rm -rf /var/lib/apt/lists/*; \
+    fi
+
 # Create service user and data directories
 RUN groupadd -r "${SERVICE_USER}" -g 1000 && \
     useradd -r -g "${SERVICE_USER}" -u 1000 -m "${SERVICE_USER}" && \
@@ -315,7 +322,7 @@ USER "${SERVICE_USER}"
 # picking up the ENV default above unless the environment overrides it.
 # ${APP_ARTIFACT} stays bare on purpose: it is not in build.py's mapping, so
 # safe_substitute leaves it alone and it likewise resolves at runtime.
-CMD java $${JAVA_OPTS} -jar "/opt/atlas/${APP_ARTIFACT}/app.${EXTENSION}"
+CMD java $${JAVA_OPTS} -jar "/opt/atlas/${APP_ARTIFACT}/app.${EXTENSION}" ${APP_ARGS}
 
 ARG BUILD_DATE
 ARG VCS_REF
