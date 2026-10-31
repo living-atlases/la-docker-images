@@ -113,13 +113,24 @@ RUN groupadd --gid 1000 app \
   && useradd --uid 1000 --gid 1000 -m -d /app app
 
 # ── debian-package: install la-pipelines from apt.gbif.es ────────────────────
+# The key is fetched by a 32-hex search term, which is not a fingerprint, so
+# pin the fingerprint and refuse anything else. And keep it out of
+# /etc/apt/trusted.gpg.d, where it would vouch for every repository in the
+# image: signed-by limits it to apt.gbif.es.
+ARG APT_GBIF_ES_FPR=A04AE8DD5C8EEB896B0E004AF697D8D2ADB9E24A
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   --mount=type=cache,target=/var/lib/apt,sharing=locked \
   if [ "${BUILD_METHOD}" = "debian-package" ]; then \
     export DEBIAN_FRONTEND=noninteractive && \
-    wget -qO /etc/apt/trusted.gpg.d/apt-gbif-es.asc \
+    wget -qO /tmp/apt-gbif-es.asc \
       'https://keyserver.ubuntu.com/pks/lookup?op=hget&search=7524d3b383016eab0ee47bfe253a51f7' && \
-    echo "deb [arch=amd64] https://apt.gbif.es/ ${LA_APT_REPO} main" > /etc/apt/sources.list.d/apt_gbif_es.list && \
+    fpr=$(gpg --show-keys --with-colons /tmp/apt-gbif-es.asc | awk -F: '/^fpr:/ {print $10; exit}') && \
+    if [ "$fpr" != "${APT_GBIF_ES_FPR}" ]; then \
+      echo "apt.gbif.es key is $fpr, expected ${APT_GBIF_ES_FPR}" >&2; exit 1; \
+    fi && \
+    install -D -m 0644 /tmp/apt-gbif-es.asc /etc/apt/keyrings/apt-gbif-es.asc && \
+    rm -f /tmp/apt-gbif-es.asc && \
+    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/apt-gbif-es.asc] https://apt.gbif.es/ ${LA_APT_REPO} main" > /etc/apt/sources.list.d/apt_gbif_es.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends la-pipelines && \
     rm -rf /var/lib/apt/lists/* && \

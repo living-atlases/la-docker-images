@@ -114,7 +114,12 @@ service_dockerfiles = sorted(
 for path in service_dockerfiles:
     name = os.path.relpath(path, REPO_ROOT)
     with open(path, "r") as handle:
-        body = handle.read()
+        raw = handle.read()
+    # Comments here discuss trusted.gpg.d and the scripts by name; only the
+    # instructions count.
+    body = "\n".join(
+        line for line in raw.splitlines() if not line.lstrip().startswith("#")
+    )
 
     # sds-static-home:latest was published on 2026-10-29 still trusting emSign
     # ECC Root CA - G3 (86A1ECBA...BE6B): ca-distrust.sh went into the two
@@ -126,6 +131,22 @@ for path in service_dockerfiles:
             f"/{script}" in body,
             f"{name}: the runtime stage must run scripts/{script}, like the "
             f"templates do -- otherwise this image ships whatever the base has",
+        )
+
+    # A key in /etc/apt/trusted.gpg.d vouches for EVERY repository in the
+    # image, Debian's own included. i18n put the apt.gbif.es key there, and
+    # fetched it from a keyserver by a 32-hex search term with no fingerprint
+    # check, so whatever came back was trusted for everything.
+    check(
+        "/etc/apt/trusted.gpg.d" not in body,
+        f"{name}: do not install repository keys into /etc/apt/trusted.gpg.d; "
+        f"put the key in /etc/apt/keyrings and name it with signed-by=",
+    )
+    if "sources.list.d" in body:
+        check(
+            "signed-by=" in body,
+            f"{name}: a third-party apt repository must be pinned to its own "
+            f"key with signed-by=",
         )
 
     # A continuation-folded RUN is one logical command; join it before looking.
