@@ -551,5 +551,60 @@ class JenkinsfileDockerAuthTest(unittest.TestCase):
         )
 
 
+class ImageSampleTest(unittest.TestCase):
+    """What a run tests has to come from what that run built."""
+
+    @staticmethod
+    def _pick(rows):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import importlib.util
+
+        path = pathlib.Path(__file__).resolve().parent / "pick-image-to-test.py"
+        spec = importlib.util.spec_from_file_location("pick_image_to_test", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.pick(rows)
+
+    def test_picks_the_last_java_service(self):
+        # Last, not first: build/<service> is rewritten for every version, so
+        # only the final one still has the Dockerfile the test script reads.
+        rows = [
+            ["cas", "6.5.6-1", "11"],
+            ["cas", "6.5.6-2", "11"],
+            ["userdetails", "3.2.0", "17"],
+        ]
+        self.assertEqual(self._pick(rows), ("userdetails", "3.2.0"))
+
+    def test_skips_non_java_images(self):
+        # i18n is a data container: no USER, no EXPOSE, no /data, and
+        # run-container-tests.sh fails an image without them. Testing it would
+        # turn every i18n run red for checks that do not apply.
+        rows = [["userdetails", "3.2.0", "17"], ["i18n", "latest", "none"]]
+        self.assertEqual(self._pick(rows), ("userdetails", "3.2.0"))
+
+    def test_no_java_service_is_not_an_error(self):
+        self.assertIsNone(self._pick([["i18n", "latest", "none"]]))
+        self.assertIsNone(self._pick([]))
+
+    def test_build_py_and_the_jenkinsfile_agree_on_the_manifest(self):
+        # Two files, one contract: build.py writes it, the pipeline reads it.
+        root = pathlib.Path(__file__).resolve().parent.parent
+        build_py = (root / "build.py").read_text()
+        self.assertIn('BUILT_IMAGES_FILE = "built-images.tsv"', build_py)
+        self.assertIn('f"{name}\\t{version}\\t{java}\\n"', build_py)
+        picker = (root / "scripts" / "pick-image-to-test.py").read_text()
+        self.assertIn('"built-images.tsv"', picker)
+
+    def test_the_tag_tested_is_not_hardcoded(self):
+        # A --list-tags run does not move `latest`, so testing `latest` would
+        # check an image the run never touched.
+        jenkinsfile = (pathlib.Path(__file__).resolve().parent.parent / "Jenkinsfile").read_text()
+        for line in jenkinsfile.splitlines():
+            if "run-container-tests.sh" in line and not line.strip().startswith("//"):
+                self.assertNotIn(
+                    " latest", line, "the tag must come from what the run built"
+                )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

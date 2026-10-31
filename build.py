@@ -126,6 +126,12 @@ DEFAULT_DEPENDENCIES_URL = "https://raw.githubusercontent.com/living-atlases/la-
 # Defaults if not found in dependencies
 DEFAULT_JAVA_VERSION = "11"
 BUILD_DIR_BASE = os.path.join(SCRIPT_DIR, "build")
+# Written at the end of a run, read by the Jenkinsfile's Image Tests stage:
+# one "service<TAB>version<TAB>java_version" line per image this run built.
+# The Java version is there because run-container-tests.sh checks the shape of
+# a Java service (non-root USER, EXPOSE, /data); a data container like i18n
+# would fail checks that do not apply to it.
+BUILT_IMAGES_FILE = "built-images.tsv"
 TEMPLATES_DIR = os.path.join(SCRIPT_DIR, "templates")
 SERVICES_DIR = os.path.join(SCRIPT_DIR, "services")
 BUILDERS_DIR = os.path.join(SCRIPT_DIR, "builders")
@@ -1222,7 +1228,20 @@ def main():
                 print("\n🛑 Aborting: --strict and a build failed.")
                 sys.exit(1)
         else:
-            built.append((name, svc_conf.get("version")))
+            built.append(
+                (name, svc_conf.get("version"), str(svc_conf.get("java_version", "")))
+            )
+
+    # --- WHAT THIS RUN BUILT ---
+    # The Image Tests stage used to probe a fixed pair (userdetails, cas), so in
+    # every run that did not include them it printed "no sampled service" and
+    # skipped. Writing down what was built lets it test something real instead,
+    # and the tag matters: a --list-tags run does not move `latest`.
+    if not args["--dry-run"] and built:
+        manifest = os.path.join(BUILD_DIR_BASE, BUILT_IMAGES_FILE)
+        with open(manifest, "w") as handle:
+            for name, version, java in built:
+                handle.write(f"{name}\t{version}\t{java}\n")
 
     # --- SUMMARY ---
     # A run at --n-tags=10 is ~214 images over many hours. Without this the log is

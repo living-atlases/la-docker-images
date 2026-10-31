@@ -137,23 +137,36 @@ pipeline {
                     // security-upgrade.sh, which every runtime stage runs, in real
                     // base images: a vulnerable brotli must fail, the upgrade fix it.
                     sh './scripts/test-security-upgrade.sh'
-                    // A sample, not all ~214 images: each of these starts a
-                    // container to check a JAVA_OPTS override actually reaches
-                    // the JVM (gh-3), which costs a minute or so per image.
-                    // One gradle-built and one maven-built service, newest tag
-                    // only. run-container-tests.sh skips cleanly when an image
-                    // was not part of this run.
-                    // build/ is gitignored and the workspace is wiped after every
-                    // run, so a Dockerfile is only there for what this run built.
-                    def tested = 0
-                    ['userdetails', 'cas'].each { svc ->
-                        if (fileExists("build/${svc}/Dockerfile")) {
-                            sh "REGISTRY=livingatlases ./scripts/run-container-tests.sh ${svc} latest"
-                            tested++
-                        }
-                    }
-                    if (tested == 0) {
-                        echo "No sampled service was built in this run, skipping image tests."
+                    // A sample, not all ~214 images: starting a container to
+                    // check that a JAVA_OPTS override reaches the JVM (gh-3)
+                    // costs a minute or so per image.
+                    //
+                    // The sample used to be the fixed pair userdetails and cas,
+                    // so any run without them printed "no sampled service" and
+                    // tested no image at all -- which is every --list-tags run,
+                    // since those rebuild one service. build.py now writes down
+                    // what it built and the last line is tested, whatever
+                    // service that is. Last, not first: build/<service> is
+                    // rewritten per version, so only the final one still has
+                    // its Dockerfile, which run-container-tests.sh reads.
+                    //
+                    // The tag comes from the manifest too: `latest` would be
+                    // wrong, because a --list-tags run does not move it and the
+                    // test would check an image this run never touched.
+                    // Which image, and at which tag, is decided by
+                    // pick-image-to-test.py, where it can be unit-tested:
+                    // picking in Groovy here would only be exercised by a real
+                    // build of the pipeline. It prints nothing when this run
+                    // built no Java service.
+                    def pick = sh(
+                        script: './scripts/pick-image-to-test.py',
+                        returnStdout: true
+                    ).trim()
+                    if (pick) {
+                        echo "Testing ${pick.replace(' ', ':')}"
+                        sh "REGISTRY=livingatlases ./scripts/run-container-tests.sh ${pick}"
+                    } else {
+                        echo "Nothing from this run to test."
                     }
                 }
             }
