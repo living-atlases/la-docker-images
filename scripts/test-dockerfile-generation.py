@@ -116,6 +116,18 @@ for path in service_dockerfiles:
     with open(path, "r") as handle:
         body = handle.read()
 
+    # sds-static-home:latest was published on 2026-10-29 still trusting emSign
+    # ECC Root CA - G3 (86A1ECBA...BE6B): ca-distrust.sh went into the two
+    # templates and nobody carried it into the hand-written Dockerfiles. i18n
+    # had the same hole and was clean only by luck. build.py copies both
+    # scripts into every build context, so there is nothing to opt into.
+    for script in ("security-upgrade.sh", "ca-distrust.sh"):
+        check(
+            f"/{script}" in body,
+            f"{name}: the runtime stage must run scripts/{script}, like the "
+            f"templates do -- otherwise this image ships whatever the base has",
+        )
+
     # A continuation-folded RUN is one logical command; join it before looking.
     commands = re.sub(r"\\\n\s*", " ", body).split("\n")
     for command in commands:

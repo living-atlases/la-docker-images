@@ -41,6 +41,15 @@ RUN test -d /opt/atlas/i18n && \
   ls -la /opt/atlas/i18n/ && \
   echo "✅ ala-i18n package installed successfully (cache bypass: ${CACHE_BYPASS})"
 
+# Clean on bookworm today only because its ca-certificates is fresh and it has
+# no brotli at all -- with nothing enforcing it, the next base bump could bring
+# either back unnoticed. Same two scripts as every generated image.
+COPY scripts/security-upgrade.sh /usr/local/bin/security-upgrade.sh
+RUN echo "cache bypass: ${CACHE_BYPASS}" && sh /usr/local/bin/security-upgrade.sh
+
+COPY scripts/ca-distrust.sh /usr/local/bin/ca-distrust.sh
+RUN sh /usr/local/bin/ca-distrust.sh
+
 # The container doesn't need to run anything, it just provides the data
 # It will be used as an init container or for data volume copying
 CMD ["echo", "ala-i18n data container ready"]

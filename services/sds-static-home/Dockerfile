@@ -60,11 +60,20 @@ RUN yarn build:production && ls -lh dist
 FROM nginxinc/nginx-unprivileged:stable-alpine
 
 ARG REPO=${REPO}
+ARG CACHE_BYPASS=unknown
 
 USER root
 
-# CVE-2026-111497: the base still ships brotli-libs 1.2.0 (decoder OOB write); fixed in 1.2.1
-RUN apk upgrade --no-cache brotli-libs
+# Same two steps the generated images run, and for the same reason: the base
+# lags the distro. brotli-libs 1.2.0 in the base has the decoder OOB write of
+# CVE-2026-111497, and this image was still trusting emSign ECC Root CA - G3
+# (86A1ECBA...BE6B) on 2026-10-31 because only the templates got ca-distrust.sh.
+# Both scripts fail the build rather than ship an image that is still exposed.
+COPY scripts/security-upgrade.sh /usr/local/bin/security-upgrade.sh
+RUN echo "cache bypass: ${CACHE_BYPASS}" && sh /usr/local/bin/security-upgrade.sh
+
+COPY scripts/ca-distrust.sh /usr/local/bin/ca-distrust.sh
+RUN sh /usr/local/bin/ca-distrust.sh
 
 # Built SPA, owned by the runtime user (101) so the entrypoint can sed-substitute tokens
 COPY --from=builder --chown=101:101 /src/${BUILD_DIR}/dist /usr/share/nginx/html
