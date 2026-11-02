@@ -630,39 +630,101 @@ class GradleTemplateRuntimeTest(unittest.TestCase):
         self.assertIn("- wkhtmltopdf", pdfgen)
 
 
-class BuildNetworkPreflightTest(unittest.TestCase):
-    """A broken agent must not be reported as broken images."""
+class BuildAgentPreflightTest(unittest.TestCase):
+    """A broken agent must not be reported as broken images.
+
+    Driven with a stub `docker` on PATH, so the three outcomes are exercised
+    without a daemon: the real thing only ever runs on the agent, where a
+    mistake costs a whole queue.
+    """
 
     ROOT = pathlib.Path(__file__).resolve().parent.parent
+    SCRIPT = ROOT / "scripts" / "check-build-agent.sh"
 
-    def test_the_pipeline_checks_the_network_before_building(self):
-        # Twelve runs on 2026-11-01 each spent ~40 minutes failing every image
-        # with "Could not resolve host: nexus.ala.org.au", and build.py filed
-        # each one against the service.
+    CORRUPT = (
+        'ERROR: failed to solve: failed to prepare extraction snapshot "x": '
+        'failed to create snapshot: missing parent '
+        '"moby/3052/sha256:deadbeef" bucket: not found'
+    )
+
+    def _run(self, fail_builds, message, attempts=2):
+        import subprocess
+        import tempfile
+
+        tmp = tempfile.mkdtemp()
+        stub = pathlib.Path(tmp) / "docker"
+        stub.write_text(
+            "#!/bin/sh\n"
+            'echo "$*" >> "$FAKE_LOG"\n'
+            "case \"$1\" in\n"
+            "  build)\n"
+            "    n=$(grep -c '^build ' \"$FAKE_LOG\")\n"
+            '    if [ "$n" -le "$FAIL_BUILDS" ]; then printf \'%s\\n\' "$FAIL_MSG" >&2; exit 1; fi\n'
+            "    exit 0 ;;\n"
+            "  *) exit 0 ;;\n"
+            "esac\n"
+        )
+        stub.chmod(0o755)
+        log = pathlib.Path(tmp) / "calls.log"
+        log.write_text("")
+        env = dict(
+            os.environ,
+            DOCKER=str(stub),
+            FAKE_LOG=str(log),
+            FAIL_BUILDS=str(fail_builds),
+            FAIL_MSG=message,
+            BUILD_AGENT_PAUSE="0",
+            BUILD_AGENT_ATTEMPTS=str(attempts),
+        )
+        result = subprocess.run(
+            ["sh", str(self.SCRIPT)], capture_output=True, text=True, env=env
+        )
+        return result, log.read_text()
+
+    def test_a_corrupt_build_cache_is_cleared_and_the_run_goes_on(self):
+        # TASK-5, twice: #243-#249 in October and #295-#311 on 2026-11-02. The
+        # cache is only a cache, so clearing it is the fix, not a workaround.
+        result, calls = self._run(fail_builds=1, message=self.CORRUPT)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("builder prune -af", calls)
+
+    def test_dns_is_not_blamed_on_the_cache_or_the_other_way_round(self):
+        # The first version of this check called every failure a DNS failure,
+        # and reported "cannot resolve" for seventeen runs that were really
+        # BuildKit being corrupt.
+        result, calls = self._run(fail_builds=99, message="cannot resolve nexus.ala.org.au")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("cannot resolve", result.stderr)
+        self.assertNotIn("builder prune", calls, "DNS is not fixed by pruning")
+
+        result, calls = self._run(fail_builds=99, message=self.CORRUPT)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("snapshot metadata", result.stderr)
+        self.assertEqual(calls.count("builder prune -af"), 1, "prune once, then give up")
+
+    def test_an_unknown_failure_says_so_instead_of_guessing(self):
+        result, _ = self._run(fail_builds=99, message="no space left on device")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("does not recognise", result.stderr)
+
+    def test_the_pipeline_checks_the_agent_before_building(self):
         text = (self.ROOT / "Jenkinsfile").read_text()
         steps = [l for l in text.splitlines() if not l.strip().startswith("//")]
         check = next(
-            (i for i, l in enumerate(steps) if "check-build-network.sh" in l), None
+            (i for i, l in enumerate(steps) if "check-build-agent.sh" in l), None
         )
         build = next((i for i, l in enumerate(steps) if "build.py" in l), None)
-        self.assertIsNotNone(check, "the pipeline must check the build network")
+        self.assertIsNotNone(check, "the pipeline must check the agent first")
         self.assertIsNotNone(build)
         self.assertLess(check, build, "the check has to run before the build")
 
     def test_the_check_script_parses(self):
-        # It only ever runs on the agent, so a syntax error would surface as a
-        # failed build hours into a queue.
         import subprocess
 
-        script = self.ROOT / "scripts" / "check-build-network.sh"
         result = subprocess.run(
-            ["sh", "-n", str(script)], capture_output=True, text=True
+            ["sh", "-n", str(self.SCRIPT)], capture_output=True, text=True
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-
-    def test_the_check_names_the_host_the_builds_need(self):
-        script = (self.ROOT / "scripts" / "check-build-network.sh").read_text()
-        self.assertIn("nexus.ala.org.au", script)
 
 
 if __name__ == "__main__":
