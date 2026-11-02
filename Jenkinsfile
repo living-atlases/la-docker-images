@@ -47,6 +47,13 @@ pipeline {
                         fi
                         ./venv/bin/pip install -q -r requirements.txt
                     '''
+                    // On 2026-11-01 the agent's containers lost DNS for eight
+                    // hours. Twelve runs spent ~40 minutes each to report that
+                    // every tag of a service was broken, when what was broken
+                    // was the network: "curl: (6) Could not resolve host:
+                    // nexus.ala.org.au". This stops the run in seconds and
+                    // says so, instead of blaming the images.
+                    sh './scripts/check-build-network.sh'
                 }
             }
         }

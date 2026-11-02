@@ -630,5 +630,40 @@ class GradleTemplateRuntimeTest(unittest.TestCase):
         self.assertIn("- wkhtmltopdf", pdfgen)
 
 
+class BuildNetworkPreflightTest(unittest.TestCase):
+    """A broken agent must not be reported as broken images."""
+
+    ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+    def test_the_pipeline_checks_the_network_before_building(self):
+        # Twelve runs on 2026-11-01 each spent ~40 minutes failing every image
+        # with "Could not resolve host: nexus.ala.org.au", and build.py filed
+        # each one against the service.
+        text = (self.ROOT / "Jenkinsfile").read_text()
+        steps = [l for l in text.splitlines() if not l.strip().startswith("//")]
+        check = next(
+            (i for i, l in enumerate(steps) if "check-build-network.sh" in l), None
+        )
+        build = next((i for i, l in enumerate(steps) if "build.py" in l), None)
+        self.assertIsNotNone(check, "the pipeline must check the build network")
+        self.assertIsNotNone(build)
+        self.assertLess(check, build, "the check has to run before the build")
+
+    def test_the_check_script_parses(self):
+        # It only ever runs on the agent, so a syntax error would surface as a
+        # failed build hours into a queue.
+        import subprocess
+
+        script = self.ROOT / "scripts" / "check-build-network.sh"
+        result = subprocess.run(
+            ["sh", "-n", str(script)], capture_output=True, text=True
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_the_check_names_the_host_the_builds_need(self):
+        script = (self.ROOT / "scripts" / "check-build-network.sh").read_text()
+        self.assertIn("nexus.ala.org.au", script)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
