@@ -22,6 +22,7 @@ HOSTS=${BUILD_AGENT_HOSTS:-"nexus.ala.org.au deb.debian.org"}
 ATTEMPTS=${BUILD_AGENT_ATTEMPTS:-3}
 PAUSE=${BUILD_AGENT_PAUSE:-15}
 PROBE_IMAGE=${BUILD_AGENT_PROBE_IMAGE:-busybox:stable}
+PRUNE_TIMEOUT=${BUILD_AGENT_PRUNE_TIMEOUT:-600}
 DOCKER=${DOCKER:-docker}
 
 context=$(mktemp -d)
@@ -55,9 +56,13 @@ while [ "$attempt" -le "$ATTEMPTS" ]; do
   # stale snapshot parent is exactly what it holds. Images are left alone:
   # they are the layer cache every other job on this agent shares.
   if [ "$reason" = cache ] && [ "$pruned" = no ]; then
-    echo "build agent: BuildKit snapshot metadata is inconsistent; clearing the build cache" >&2
-    $DOCKER builder prune -af >&2 || true
-    $DOCKER rmi -f "$PROBE_IMAGE" >&2 2>/dev/null || true
+    echo "build agent: snapshot metadata is inconsistent; clearing the build cache" >&2
+    # Capped and quiet: on 2026-11-02 this took 38 minutes and printed one
+    # line per entry for 98GB of cache, inside a run that was going to fail
+    # anyway. Worth trying once -- it is what fixed October's incident -- but
+    # not worth holding the executor for an hour.
+    timeout "$PRUNE_TIMEOUT" $DOCKER builder prune -af >/dev/null 2>&1 || true
+    $DOCKER rmi -f "$PROBE_IMAGE" >/dev/null 2>&1 || true
     pruned=yes
     continue
   fi
@@ -77,11 +82,13 @@ EOF
     ;;
   cache)
     cat >&2 <<EOF
-build agent: BuildKit still cannot extract an image after clearing its cache.
-This is TASK-5 again: the snapshot metadata of the docker daemon is
-inconsistent ("missing parent ... bucket: not found") and no build can run.
-On the agent: docker builder prune -af, and if it persists restart dockerd so
-containerd rebuilds its snapshot buckets.
+build agent: images still cannot be extracted after clearing the build cache.
+This is TASK-5 again, and build #312 showed the cache is not where it lives:
+98GB pruned and the same parent was still missing. The broken bucket is in the
+daemon's image store, so on the agent, in this order:
+  docker image prune -af     (unused images; the layer cache goes with them)
+  sudo systemctl restart docker   (containerd rebuilds its snapshot buckets)
+Nothing here can do either one: both affect every job on the agent.
 EOF
     ;;
   *)
