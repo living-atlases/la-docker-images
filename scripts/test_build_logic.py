@@ -702,6 +702,70 @@ class BuildAgentPreflightTest(unittest.TestCase):
         self.assertIn("snapshot metadata", result.stderr)
         self.assertEqual(calls.count("builder prune -af"), 1, "prune once, then give up")
 
+    def _run_wedged_image(self, wedged_image, message, images):
+        """A stub that fails only for builds whose FROM is `wedged_image`."""
+        import subprocess
+        import tempfile
+
+        tmp = tempfile.mkdtemp()
+        stub = pathlib.Path(tmp) / "docker"
+        stub.write_text(
+            "#!/bin/sh\n"
+            'echo "$*" >> "$FAKE_LOG"\n'
+            "case \"$1\" in\n"
+            "  build)\n"
+            "    df=\n"
+            "    while [ $# -gt 0 ]; do\n"
+            '      [ "$1" = "-f" ] && df=$2\n'
+            "      shift\n"
+            "    done\n"
+            '    if grep -q "^FROM $WEDGED_IMAGE\\$" "$df"; then\n'
+            '      printf \'%s\\n\' "$FAIL_MSG" >&2; exit 1\n'
+            "    fi\n"
+            "    exit 0 ;;\n"
+            "  *) exit 0 ;;\n"
+            "esac\n"
+        )
+        stub.chmod(0o755)
+        log = pathlib.Path(tmp) / "calls.log"
+        log.write_text("")
+        env = dict(
+            os.environ,
+            DOCKER=str(stub),
+            FAKE_LOG=str(log),
+            WEDGED_IMAGE=wedged_image,
+            FAIL_MSG=message,
+            BUILD_AGENT_PAUSE="0",
+            BUILD_AGENT_ATTEMPTS="2",
+            BUILD_AGENT_PROBE_IMAGES=images,
+        )
+        result = subprocess.run(
+            ["sh", str(self.SCRIPT)], capture_output=True, text=True, env=env
+        )
+        return result, log.read_text()
+
+    def test_a_wedged_probe_image_does_not_stop_the_run(self):
+        # 2026-11-02: busybox:stable's layer could neither be read nor
+        # recreated, and it was this check's only probe image, so the check
+        # failed #295-#316 while the agent built debian:bookworm-slim fine.
+        # A broken probe image is the check's problem, not the run's.
+        result, calls = self._run_wedged_image(
+            "busybox:stable", self.CORRUPT, "busybox:stable debian:bookworm-slim"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("debian:bookworm-slim", result.stdout)
+        self.assertIn("busybox:stable", result.stderr, "the wedged image is named")
+        self.assertIn("build agent: ok", result.stdout)
+
+    def test_every_probe_image_wedged_still_stops_the_run(self):
+        # The other half: if no base image can be extracted, nothing will
+        # build, and that does need a human on the agent.
+        result, _ = self._run_wedged_image(
+            "busybox:stable", self.CORRUPT, "busybox:stable busybox:stable"
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("no probe image can be extracted", result.stderr)
+
     def test_an_unknown_failure_says_so_instead_of_guessing(self):
         result, _ = self._run(fail_builds=99, message="no space left on device")
         self.assertEqual(result.returncode, 1)
