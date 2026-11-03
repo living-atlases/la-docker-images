@@ -58,17 +58,47 @@ classify() {
   fi
 }
 
-pruned=no
-wedged=""
-reason=unknown
+# Every probe image in turn. Succeeds as soon as one builds; `built` names it
+# and `wedged` lists the ones whose layers could not be extracted.
+run_probes() {
+  built=""
+  wedged=""
+  for image in $PROBE_IMAGES; do
+    attempt=1
+    while [ "$attempt" -le "$ATTEMPTS" ]; do
+      if probe "$image"; then
+        built=$image
+        return 0
+      fi
 
-for image in $PROBE_IMAGES; do
-  attempt=1
-  while [ "$attempt" -le "$ATTEMPTS" ]; do
-    if probe "$image"; then
-      echo "build agent: ok, containers build and resolve $HOSTS (probe $image)"
-      if [ -n "$wedged" ]; then
-        cat >&2 <<EOF
+      echo "build agent: probe $image, attempt $attempt of $ATTEMPTS failed" >&2
+      sed 's/^/   /' "$context/err" >&2
+      reason=$(classify)
+
+      case $reason in
+        dns)
+          # Agent-wide: no other probe image resolves any better.
+          return 1
+          ;;
+        cache)
+          # Retrying this image is pointless, the next image is not.
+          wedged="$wedged $image"
+          break
+          ;;
+      esac
+
+      attempt=$((attempt + 1))
+      if [ "$attempt" -le "$ATTEMPTS" ]; then sleep "$PAUSE"; fi
+    done
+  done
+  if [ -n "$wedged" ] && [ "${reason:-}" != dns ]; then reason=cache; fi
+  return 1
+}
+
+ok() {
+  echo "build agent: ok, containers build and resolve $HOSTS (probe $built)"
+  if [ -n "$wedged" ]; then
+    cat >&2 <<EOF
 build agent: these probe images cannot be extracted here:$wedged
 Their layers are wedged in the daemon's snapshot metadata, and that is not the
 build cache: on 2026-11-02 busybox:stable's layer survived an image prune and a
@@ -77,43 +107,28 @@ To repair it when the agent is idle, as root:
   systemctl restart docker containerd   (the snapshot buckets are reloaded)
   docker pull$wedged                  (confirms it took)
 EOF
-      fi
-      exit 0
-    fi
+  fi
+}
 
-    echo "build agent: probe $image, attempt $attempt of $ATTEMPTS failed" >&2
-    sed 's/^/   /' "$context/err" >&2
-    reason=$(classify)
+reason=unknown
 
-    case $reason in
-      dns)
-        # Agent-wide: no other probe image resolves any better.
-        break 2
-        ;;
-      cache)
-        # The build cache is the one thing here that is safe to throw away, and
-        # a stale snapshot parent can live in it. Capped and quiet: on
-        # 2026-11-02 this took 38 minutes and printed one line per entry for
-        # 98GB, inside a run that was going to fail anyway. Worth trying once
-        # -- it is what fixed October's incident -- but not worth holding the
-        # executor for an hour. Images are left alone: they are the layer cache
-        # every other job on this agent shares.
-        if [ "$pruned" = no ]; then
-          echo "build agent: snapshot metadata is inconsistent; clearing the build cache" >&2
-          timeout "$PRUNE_TIMEOUT" $DOCKER builder prune -af >/dev/null 2>&1 || true
-          pruned=yes
-          continue
-        fi
-        $DOCKER rmi -f "$image" >/dev/null 2>&1 || true
-        wedged="$wedged $image"
-        break
-        ;;
-    esac
+if run_probes; then ok; exit 0; fi
 
-    attempt=$((attempt + 1))
-    if [ "$attempt" -le "$ATTEMPTS" ]; then sleep "$PAUSE"; fi
+# Only now is the prune worth its ten minutes: no base image can be extracted,
+# so this really may be the build cache rather than one wedged layer. Capped
+# and quiet, because on 2026-11-02 it took 38 minutes and printed one line per
+# entry for 98GB inside a run that was going to fail anyway -- and because
+# #319-#320 then paid 13 of those minutes on every single run, pruning for a
+# busybox layer that alpine:3 made irrelevant. Images are left alone: they are
+# the layer cache every other job on this agent shares.
+if [ "$reason" = cache ]; then
+  echo "build agent: no probe image can be extracted; clearing the build cache" >&2
+  timeout "$PRUNE_TIMEOUT" $DOCKER builder prune -af >/dev/null 2>&1 || true
+  for image in $wedged; do
+    $DOCKER rmi -f "$image" >/dev/null 2>&1 || true
   done
-done
+  if run_probes; then ok; exit 0; fi
+fi
 
 case ${reason:-unknown} in
   dns)

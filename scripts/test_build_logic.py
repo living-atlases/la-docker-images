@@ -675,6 +675,9 @@ class BuildAgentPreflightTest(unittest.TestCase):
             FAIL_MSG=message,
             BUILD_AGENT_PAUSE="0",
             BUILD_AGENT_ATTEMPTS=str(attempts),
+            # One probe image, so these cases are about the agent rather than
+            # about falling through to the next image (that has its own tests).
+            BUILD_AGENT_PROBE_IMAGE="busybox:stable",
         )
         result = subprocess.run(
             ["sh", str(self.SCRIPT)], capture_output=True, text=True, env=env
@@ -756,6 +759,9 @@ class BuildAgentPreflightTest(unittest.TestCase):
         self.assertIn("debian:bookworm-slim", result.stdout)
         self.assertIn("busybox:stable", result.stderr, "the wedged image is named")
         self.assertIn("build agent: ok", result.stdout)
+        # #319-#320 paid 13 minutes a run pruning the cache for a layer that
+        # the next probe image made irrelevant. Nothing to prune here.
+        self.assertNotIn("builder prune", calls)
 
     def test_every_probe_image_wedged_still_stops_the_run(self):
         # The other half: if no base image can be extracted, nothing will
