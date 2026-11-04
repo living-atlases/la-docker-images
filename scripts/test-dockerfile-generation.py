@@ -165,6 +165,21 @@ for path in service_dockerfiles:
             f"fails the build on a cold /root/.m2",
         )
 
+# ── Derived images ───────────────────────────────────────────────────────────
+# Upstream image + the distro's updates. The whole point is that the update and CA steps run
+# as root and the base's user is put back after them; a derived image that ends as root, or
+# that skips a step, ships what upstream has.
+with open(os.path.join(REPO_ROOT, "templates", "Dockerfile.derived.tmpl")) as handle:
+    derived = Template(handle.read()).safe_substitute(
+        {"BASE_IMAGE": "example.org/base:1", "RUN_USER": "1234:0", "SERVICE_NAME": "x", "DESCRIPTION": "d"}
+    )
+derived_body = [l for l in derived.splitlines() if l and not l.startswith("#")]
+check(derived_body[0] == "FROM example.org/base:1", "Dockerfile.derived.tmpl: FROM must be the base_image")
+for script in ("security-upgrade.sh", "ca-distrust.sh"):
+    check(f"/{script}" in derived, f"Dockerfile.derived.tmpl: must run scripts/{script}")
+check(derived_body[-1] == "USER 1234:0", "Dockerfile.derived.tmpl: the base's user (run_user) must come back last")
+check("${" not in derived.replace("${CACHE_BYPASS}", ""), "Dockerfile.derived.tmpl: an unsubstituted ${...} is left")
+
 if failures:
     print("Dockerfile template checks FAILED:\n")
     for failure in failures:

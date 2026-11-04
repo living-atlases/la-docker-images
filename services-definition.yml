@@ -269,3 +269,32 @@ services:
     version: latest
     java_version: none
     no_cache: true
+
+  # --- Derived images -------------------------------------------------------------------
+  # Upstream images plus the distro's security updates (build_method: derived, see
+  # templates/Dockerfile.derived.tmpl). For the ones upstream has not patched yet: libbrotli1
+  # (CVE-2026-111497, CISA KEV) and the CA roots distrusted after a compromise. The tag is
+  # <upstream tag>-brotli; la-docker-compose points at it. Drop an entry once upstream ships
+  # the fix, and the matching override in la-docker-compose with it.
+  elasticsearch:
+    name: elasticsearch
+    description: Elasticsearch 8.x with the distro's security updates
+    build_method: derived
+    base_image: docker.elastic.co/elasticsearch/elasticsearch:8.17.10
+    run_user: "1000:0"
+    version: 8.17.10-brotli
+    java_version: none
+  zookeeper:
+    name: zookeeper
+    description: ZooKeeper with the distro's security updates
+    build_method: derived
+    base_image: zookeeper:3.9.3
+    version: 3.9.3-brotli
+    java_version: none
+  geoserver:
+    name: geoserver
+    description: kartoza GeoServer with the distro's security updates
+    build_method: derived
+    base_image: kartoza/geoserver:2.28.3
+    version: 2.28.3-brotli
+    java_version: none

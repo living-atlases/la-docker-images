@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1.4
+# ${SERVICE_NAME} - ${DESCRIPTION}
+# Derived image: an upstream image with the distro's security updates applied, for the
+# ones whose maintainers lag behind (libbrotli1 for CVE-2026-111497, CA roots distrusted
+# after a compromise). Nothing else changes: same entrypoint, command, user and ports.
+#   base_image   the upstream reference to start from (pinned in services-definition.yml)
+#   run_user     the user the base image runs as, put back after the root-only steps
+FROM ${BASE_IMAGE}
+
+# Consume build.py's --build-arg values quietly (silences "unused build-arg" warnings)
+ARG REGISTRY=""
+ARG BUILD_METHOD=derived
+ARG VERSION=latest
+ARG BUILD_DIR=.
+ARG COMMIT=HEAD
+
+USER root
+
+# CACHE_BYPASS (a timestamp from build.py) keeps this layer from being reused from cache.
+ARG CACHE_BYPASS=0
+COPY scripts/security-upgrade.sh /usr/local/bin/security-upgrade.sh
+RUN echo "cache bypass: ${CACHE_BYPASS}" && sh /usr/local/bin/security-upgrade.sh
+
+COPY scripts/ca-distrust.sh /usr/local/bin/ca-distrust.sh
+RUN sh /usr/local/bin/ca-distrust.sh
+
+LABEL org.opencontainers.image.title="${SERVICE_NAME}"
+LABEL org.opencontainers.image.description="${DESCRIPTION}"
+LABEL org.opencontainers.image.base.name="${BASE_IMAGE}"
+
+USER ${RUN_USER}

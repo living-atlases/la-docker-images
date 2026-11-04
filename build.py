@@ -639,6 +639,8 @@ def generate_dockerfile(service_name, config, build_path):
     else:
         # Use generic template
         build_tool = config.get("build_tool", "gradle")
+        if config.get("build_method") == "derived":
+            build_tool = "derived"
         template_file = os.path.join(TEMPLATES_DIR, f"Dockerfile.{build_tool}.tmpl")
         if not os.path.exists(template_file):
             print(f"Error: Template not found: {template_file}")
@@ -728,6 +730,8 @@ def generate_dockerfile(service_name, config, build_path):
         "COMMIT": config.get("commit", "HEAD"),
         "BUILD_TOOL": config.get("build_tool", "gradle"),
         "BUILD_METHOD": config.get("build_method", "nexus"),
+        "BASE_IMAGE": config.get("base_image", ""),
+        "RUN_USER": config.get("run_user", "root"),
         "SERVICE_USER": config.get("name", service_name)
         if " " not in config.get("name", service_name)
         else service_name,
@@ -832,6 +836,17 @@ def build_service(service_name, service_config, dry_run=False, no_cache=False):
 
     if no_cache or service_config.get("no_cache"):
         cmd.append("--no-cache")
+
+    # A derived image is its upstream base plus updates: with --pull, take the
+    # newest base, or the update step would run on a stale copy.
+    if service_config.get("build_method") == "derived" and service_config.get("pull"):
+        base = service_config["base_image"]
+        print(f"   📡 Pulling upstream base image: {base}...")
+        try:
+            subprocess.check_call(["docker", "pull", "-q", base], stdout=subprocess.DEVNULL)
+        except subprocess.CalledProcessError:
+            print(f"   ❌ Could not pull {base}")
+            return "docker pull base"
 
     # We DO NOT use --pull directly because it fails with our local builders.
     # Instead, we pull the external runtime base image if requested.
@@ -1201,8 +1216,9 @@ def main():
         tool = svc_conf.get("build_tool", "gradle")
         build_method = svc_conf.get("build_method", "repo-branch")
 
-        # debian-package services install from apt — no builder image needed
-        if build_method != "debian-package":
+        # debian-package services install from apt and derived ones start from an
+        # upstream image: no builder image needed
+        if build_method not in ("debian-package", "derived"):
             ensure_builders(
                 registry,
                 java_version,
