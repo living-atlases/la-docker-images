@@ -797,5 +797,209 @@ class BuildAgentPreflightTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+# --- git-only releases ---------------------------------------------------------
+# Versions tagged upstream but never deployed to Nexus (alerts 5.3.2, 6.2.0,
+# 6.2.1). No network: ls-remote output and the raw build files are fixtures.
+
+import git_versions as gv
+
+LS_REMOTE = """\
+aaa\trefs/tags/5.3.1
+bbb\trefs/tags/5.3.2
+ccc\trefs/tags/6.1.0-SNAPSHOT
+ddd\trefs/tags/6.1.0-SNAPSHOT^{}
+eee\trefs/tags/6.2.0
+fff\trefs/tags/v6.2.1
+ggg\trefs/tags/alerts-1.1
+hhh\trefs/tags/6.3.0-RC1
+"""
+
+# Real build files of the two alerts tags this was written for.
+ALERTS_6_2_1 = {
+    "gradle.properties": "grailsVersion=7.1.1\ngroovyVersion=4.0.31\n",
+    "build.gradle": "version = \"6.2.1\"\napply plugin:\"war\"\n",
+}
+ALERTS_5_3_2 = {
+    "gradle.properties": "grailsVersion=6.0.0\n",
+    "build.gradle": "java {\n    sourceCompatibility = JavaVersion.VERSION_17\n}\n",
+}
+
+
+class GitOnlyReleasesTest(unittest.TestCase):
+    def test_tag_names_come_out_of_ls_remote_once(self):
+        tags = gv.parse_ls_remote(LS_REMOTE)
+        self.assertEqual(tags.count("6.1.0-SNAPSHOT"), 1)
+        self.assertIn("v6.2.1", tags)
+
+    def test_only_release_tags_above_the_newest_nexus_release(self):
+        found = gv.git_only_releases(gv.parse_ls_remote(LS_REMOTE), ["5.2.5", "5.3.1"])
+        # v is stripped but the tag keeps it; SNAPSHOT, RC and alerts-1.1 are not releases
+        self.assertEqual(found, [("5.3.2", "5.3.2"), ("6.2.0", "6.2.0"), ("6.2.1", "v6.2.1")])
+
+    def test_old_tags_nexus_lacks_are_history_and_stay_out(self):
+        found = gv.git_only_releases(["1.0", "2.0", "5.4.0"], ["3.0.0", "4.0.0"])
+        self.assertEqual(found, [("5.4.0", "5.4.0")])
+
+    def test_numbers_compare_as_numbers(self):
+        # as text 5.9.2 sorts after 5.14 (the ecodata:latest bug)
+        found = gv.git_only_releases(["5.14", "5.9.2"], ["5.9.1"])
+        self.assertEqual([v for v, _ in found], ["5.9.2", "5.14"])
+
+    def test_dash_suffix_releases_count(self):
+        found = gv.git_only_releases(["6.5.6-6", "6.5.6-5"], ["6.5.6-5"])
+        self.assertEqual(found, [("6.5.6-6", "6.5.6-6")])
+
+    def test_without_nexus_releases_nothing_is_built_from_history(self):
+        self.assertEqual(gv.git_only_releases(["1.0", "2.0"], []), [])
+
+    def test_nothing_new_means_nothing_extra(self):
+        self.assertEqual(gv.git_only_releases(["5.3.1"], ["5.3.1"]), [])
+
+
+class SelectVersionsTest(unittest.TestCase):
+    NEXUS = ["5.2.5", "5.3.1"]
+    GIT = [("5.3.2", "5.3.2"), ("6.2.1", "v6.2.1")]
+
+    def test_n_counts_over_both_sources(self):
+        picked = gv.select_versions(self.NEXUS, self.GIT, 1)
+        self.assertEqual([(p["version"], p["source"]) for p in picked], [("6.2.1", "git")])
+        self.assertEqual(picked[0]["tag"], "v6.2.1")
+
+    def test_nexus_stays_in_when_n_reaches_it(self):
+        picked = gv.select_versions(self.NEXUS, self.GIT, 3)
+        self.assertEqual(
+            [(p["version"], p["source"]) for p in picked],
+            [("5.3.1", "nexus"), ("5.3.2", "git"), ("6.2.1", "git")],
+        )
+
+    def test_without_git_it_is_the_old_behaviour(self):
+        picked = gv.select_versions(self.NEXUS, [], 1)
+        self.assertEqual([p["version"] for p in picked], ["5.3.1"])
+
+
+class JavaInferenceTest(unittest.TestCase):
+    def test_grails_7_without_source_compatibility_is_java_17(self):
+        self.assertEqual(gv.infer_java_version(ALERTS_6_2_1), "17")
+
+    def test_explicit_source_compatibility(self):
+        self.assertEqual(gv.infer_java_version(ALERTS_5_3_2), "17")
+
+    def test_the_highest_signal_wins(self):
+        files = {"build.gradle": "sourceCompatibility = JavaVersion.VERSION_11",
+                 "gradle.properties": "grailsVersion=7.0.0"}
+        self.assertEqual(gv.infer_java_version(files), "17")
+
+    def test_old_style_java_8(self):
+        self.assertEqual(
+            gv.infer_java_version({"build.gradle": "sourceCompatibility = JavaVersion.VERSION_1_8"}), "8"
+        )
+        self.assertEqual(
+            gv.infer_java_version({"build.gradle": "sourceCompatibility = '1.8'"}), "8"
+        )
+
+    def test_maven(self):
+        self.assertEqual(
+            gv.infer_java_version({"pom.xml": "<properties><java.version>21</java.version></properties>"}), "21"
+        )
+        self.assertEqual(
+            gv.infer_java_version({"pom.xml": "<maven.compiler.release>17</maven.compiler.release>"}), "17"
+        )
+
+    def test_no_signal_is_none(self):
+        self.assertIsNone(gv.infer_java_version({"build.gradle": "version = '1'"}))
+        self.assertIsNone(gv.infer_java_version({}))
+
+    def test_the_sources_override_a_stale_dependencies_yaml(self):
+        self.assertEqual(gv.resolve_java_version("11", "17"), ("17", True))
+        self.assertEqual(gv.resolve_java_version("17", "11"), ("17", False))
+        self.assertEqual(gv.resolve_java_version(None, "17"), ("17", False))
+        self.assertEqual(gv.resolve_java_version("11", None), ("11", False))
+        self.assertEqual(gv.resolve_java_version(None, None), (None, False))
+
+    def test_build_files_are_fetched_from_the_tag(self):
+        urls = []
+        files = gv.fetch_build_files(
+            "https://github.com/AtlasOfLivingAustralia/alerts",
+            "v6.2.1",
+            fetch=lambda url: urls.append(url) or ("x" if "build.gradle" in url else None),
+        )
+        self.assertEqual(list(files), ["build.gradle"])
+        self.assertIn(
+            "https://raw.githubusercontent.com/AtlasOfLivingAustralia/alerts/v6.2.1/gradle.properties", urls
+        )
+
+
+class PlanVersionsTest(unittest.TestCase):
+    """build.py's glue: an unresolvable git-only tag must not take the run down."""
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "build_under_test", pathlib.Path(__file__).resolve().parent.parent / "build.py"
+        )
+        cls.build = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.build)
+
+    CONF = {"repository": "https://github.com/AtlasOfLivingAustralia/alerts"}
+    DEPS = {"alerts": {">= 2.0.0": [{"java": "11"}]}}
+
+    def plan(self, conf=None, files=None, tags=("5.3.1", "6.2.1"), n=1, nexus=("5.3.1",)):
+        gvm = self.build.git_versions
+        saved = gvm.list_remote_tags, gvm.fetch_build_files
+        gvm.list_remote_tags = lambda repo: list(tags)
+        gvm.fetch_build_files = lambda repo, tag: ALERTS_6_2_1 if files is None else files
+        try:
+            return self.build.plan_versions(
+                "alerts", {**self.CONF, **(conf or {})}, list(nexus), n, self.DEPS
+            )
+        finally:
+            gvm.list_remote_tags, gvm.fetch_build_files = saved
+
+    def test_git_only_newest_is_built_from_source_with_the_inferred_java(self):
+        picked = self.plan()
+        self.assertEqual([(p["version"], p["source"], p["java_version"]) for p in picked],
+                         [("6.2.1", "git", "17")])
+
+    def test_unreadable_build_files_leave_the_tag_out_and_nexus_keeps_latest(self):
+        # dependencies.yaml says Java 11 for alerts: trusting it alone is the bug
+        picked = self.plan(files={})
+        self.assertEqual([(p["version"], p["source"]) for p in picked], [("5.3.1", "nexus")])
+
+    def test_files_without_any_java_signal_fall_back_to_dependencies_yaml(self):
+        picked = self.plan(files={"build.gradle": "version = '1'"})
+        self.assertEqual([(p["version"], p["java_version"]) for p in picked], [("6.2.1", "11")])
+
+    def test_no_signal_and_no_dependencies_entry_leaves_the_tag_out(self):
+        saved = self.build.deps_utils
+        self.build.deps_utils = None
+        try:
+            picked = self.plan(files={"build.gradle": "version = '1'"})
+        finally:
+            self.build.deps_utils = saved
+        self.assertEqual([(p["version"], p["source"]) for p in picked], [("5.3.1", "nexus")])
+
+    def test_opt_out_per_service(self):
+        picked = self.plan(conf={"git_releases": False})
+        self.assertEqual([(p["version"], p["source"]) for p in picked], [("5.3.1", "nexus")])
+
+    def test_a_forced_java_version_is_respected(self):
+        picked = self.plan(conf={"java_version": "21"})
+        self.assertEqual(picked[0]["java_version"], "21")
+
+    def test_ls_remote_failure_falls_back_to_nexus(self):
+        gvm = self.build.git_versions
+        saved = gvm.list_remote_tags
+        def boom(repo):
+            raise RuntimeError("no network")
+        gvm.list_remote_tags = boom
+        try:
+            picked = self.build.plan_versions("alerts", dict(self.CONF), ["5.3.1"], 1, self.DEPS)
+        finally:
+            gvm.list_remote_tags = saved
+        self.assertEqual([(p["version"], p["source"]) for p in picked], [("5.3.1", "nexus")])
+
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -104,6 +104,7 @@ except ImportError:
     deps_utils = None
 
 import artifact_resolver
+import git_versions
 from concurrent.futures import ThreadPoolExecutor
 
 # Nexus is on the other side of the world, so each resolution is latency-bound
@@ -625,6 +626,78 @@ def get_github_tags(service_name, config, n=1):
     return results[-n:]
 
 
+def plan_versions(name, svc_conf, nexus_versions, n, dependencies=None):
+    """Pick the last `n` versions of a service across Nexus and upstream git tags.
+
+    Nexus is the source of truth for what ALA published, but some releases are
+    only tagged on GitHub (alerts 6.2.1). Tags strictly newer than the newest
+    Nexus release are added to the candidates and built from source.
+
+    A git-only version needs a Java version: dependencies.yaml may not know it
+    (its `>= 2.0.0` rule says Java 11 for alerts, which also matches 6.2.1), so
+    the sources are read and the higher of the two wins. One that cannot be
+    resolved is left out with a warning instead of aborting the whole run;
+    Nexus' newest then keeps `latest`.
+
+    `git_releases: false` in services-definition.yml turns this off per service.
+
+    Returns dicts {version, tag, source, java_version} oldest first.
+    """
+    git_only = []
+    repo = svc_conf.get("repository", "")
+    if svc_conf.get("git_releases", True) and "github.com" in repo:
+        try:
+            tags = git_versions.list_remote_tags(repo)
+            git_only = git_versions.git_only_releases(tags, nexus_versions)
+        except Exception as e:
+            print(f"   ⚠️  Could not list git tags for {name}: {e}")
+
+    java_for = {}
+    usable = []
+    # Newest first, stopping once n are usable: the older ones would be cut by
+    # select_versions anyway, and each costs three HTTP fetches.
+    for version, tag in reversed(git_only):
+        if len(usable) >= n:
+            break
+        java = svc_conf.get("java_version")
+        if not java:
+            from_deps = (
+                deps_utils.determine_java_version(name, version, dependencies)
+                if deps_utils and dependencies
+                else None
+            )
+            files = git_versions.fetch_build_files(repo, tag)
+            if not files:
+                # dependencies.yaml alone is exactly what gets this wrong (alerts
+                # 6.x), so with no sources to check it against, don't guess.
+                print(
+                    f"   ⚠️  {name} {version} is only a git tag and its build files "
+                    "could not be read: leaving it out"
+                )
+                continue
+            inferred = git_versions.infer_java_version(files)
+            java, overridden = git_versions.resolve_java_version(from_deps, inferred)
+            if overridden:
+                print(
+                    f"   ⚠️  {name} {version}: Java {java} from the build files, "
+                    f"dependencies.yaml says {from_deps}"
+                )
+        if not java:
+            print(
+                f"   ⚠️  {name} {version} is only a git tag and its Java version "
+                "cannot be determined: leaving it out"
+            )
+            continue
+        java_for[version] = java
+        usable.append((version, tag))
+        print(f"   🆕 {name} {version}: tag {tag} is not in Nexus, building from source (Java {java})")
+
+    selection = git_versions.select_versions(nexus_versions, usable, n)
+    for item in selection:
+        item["java_version"] = java_for.get(item["version"])
+    return selection
+
+
 def generate_dockerfile(service_name, config, build_path):
     """Generate Dockerfile from template"""
 
@@ -1032,7 +1105,11 @@ def main():
         if is_nexus and version == "latest":
             n_tags = int(args.get("--n-tags", 1))
             update_metadata = args.get("--update-metadata", False)
-            versions = get_nexus_versions(name, svc_conf, n_tags, update_metadata)
+            # All of Nexus' versions, not just the last n: the newest one is the
+            # yardstick for which git tags count as unpublished.
+            nexus_all = get_nexus_versions(name, svc_conf, 100000, update_metadata)
+            selection = plan_versions(name, svc_conf, nexus_all, n_tags, dependencies)
+            versions = [item["version"] for item in selection]
 
             if not versions:
                 print(
@@ -1041,11 +1118,17 @@ def main():
                 expanded_build_list.append((name, svc_conf))
             else:
                 print(f"   ✨ Resolved versions for {name}: {versions}")
-                for i, v in enumerate(versions):
+                for i, item in enumerate(selection):
                     v_conf = svc_conf.copy()
-                    v_conf["version"] = v
+                    v_conf["version"] = item["version"]
+                    if item["source"] == "git":
+                        # Same mapping as build_method repo-tags: the tag is the
+                        # branch the Dockerfile checks out.
+                        v_conf["build_method"] = "repo-branch"
+                        v_conf["branch"] = item["tag"]
+                        v_conf["java_version"] = item["java_version"]
                     # Tag the last one as latest
-                    if i == len(versions) - 1:
+                    if i == len(selection) - 1:
                         v_conf["additional_tags"] = ["latest"]
                         v_conf["is_newest"] = True
                     else:

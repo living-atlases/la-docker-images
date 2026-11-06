@@ -98,6 +98,25 @@ The builder automatically determines the required Java version (8, 11, 17, 21) b
 - Local cache: Dependencies are cached in `~/.cache/la-docker-images/` for 24 hours.
 - Override source: `./venv/bin/python build.py --dependencies=/path/to/local-deps.yaml`
 
+## Releases that are only tagged on GitHub
+
+Some projects tag a release without ever deploying it to Nexus (alerts 5.3.2, 6.2.0
+and 6.2.1 at the time of writing). With the default `nexus` method and no explicit
+version, `build.py` also looks at the repository's tags (`git ls-remote`) and takes
+the release tags **strictly newer than the newest Nexus release**: those are built
+from source (`repo-branch` on the tag) and compete with the Nexus versions for the
+`--n-tags` slots, so `latest` goes to the newest of all of them. Older tags that
+Nexus lacks are history and are ignored.
+
+- Java: the higher of `dependencies.yaml` and what the sources declare
+  (`sourceCompatibility`, `java.version`, or the Grails major). When the sources win
+  the log says so. If the build files cannot be read the tag is left out, and
+  Nexus' newest keeps `latest`.
+- A git-only version that fails to build fails the run, like any newest version.
+- Opt out per service with `git_releases: false` in `services-definition.yml`.
+- `--list-tags` is unchanged and only reads Nexus. For an older git-only version use
+  `TAG=<v> BUILD_METHOD=repo-tags JAVA_VERSION=<n>`.
+
 ---
 
 ## Configuration details
@@ -224,6 +243,7 @@ This repository includes a `Jenkinsfile` that automates image building in a CI/C
   reaches an old version without rebuilding everything above it, and does not move
   `latest`. This is what a backfill should use.
 - `BRANCH`: Git branch for `repo-branch` builds.
+- `BUILD_METHOD`, `JAVA_VERSION`: override the build method / Java version (see above).
 - `PUSH`: Whether to push images to Docker Hub after a successful build.
 
 ### Automatic Synchronization
