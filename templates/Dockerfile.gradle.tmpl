@@ -81,6 +81,8 @@ ARG BUILD_DIR=.
 
 WORKDIR /build/src
 
+COPY scripts/grails-repo-filter.gradle /opt/gradle-init/grails-repo-filter.gradle
+
 RUN echo "🔍 Cloning repository..." && \
     echo "   Repo: ${REPO}"
 
@@ -101,21 +103,13 @@ RUN --mount=type=cache,target=/root/.gradle \
     # Convert directory path to Gradle project path (e.g. server -> :server) \
     PROJECT_PATH=$(echo "${BUILD_DIR}" | sed 's/\//:/g') && \
     echo "🔨 Building project :${PROJECT_PATH} from root..." && \
-    if [ "${EXTENSION}" = "war" ]; then \
-    ./gradlew ":${PROJECT_PATH}:clean" ":${PROJECT_PATH}:war" -x test --no-daemon --max-workers=1; \
-    else \
-    ./gradlew ":${PROJECT_PATH}:clean" ":${PROJECT_PATH}:assemble" -x test --no-daemon --max-workers=1; \
-    fi && \
-    find "${BUILD_DIR}/build/libs/" -maxdepth 1 -name "*.${EXTENSION}" -exec mv {} /build/artifact.${EXTENSION} \; || \
+    ./gradlew ":${PROJECT_PATH}:clean" ":${PROJECT_PATH}:assemble" -x test --no-daemon --max-workers=1 --init-script /opt/gradle-init/grails-repo-filter.gradle && \
+    find "${BUILD_DIR}/build/libs/" -maxdepth 1 -name "*.${EXTENSION}" ! -name "*-plain.${EXTENSION}" -exec mv {} /build/artifact.${EXTENSION} \; || \
     find "${BUILD_DIR}/build/libs/" -maxdepth 1 -name "*.jar" -exec mv {} /build/artifact.${EXTENSION} \; ; \
     else \
     echo "🔨 Building from root..." && \
-    if [ "${EXTENSION}" = "war" ]; then \
-    ./gradlew clean war -x test --no-daemon --max-workers=1; \
-    else \
-    ./gradlew clean assemble -x test --no-daemon --max-workers=1; \
-    fi && \
-    find "build/libs/" -maxdepth 1 -name "*.${EXTENSION}" -exec mv {} /build/artifact.${EXTENSION} \; || \
+    ./gradlew clean assemble -x test --no-daemon --max-workers=1 --init-script /opt/gradle-init/grails-repo-filter.gradle && \
+    find "build/libs/" -maxdepth 1 -name "*.${EXTENSION}" ! -name "*-plain.${EXTENSION}" -exec mv {} /build/artifact.${EXTENSION} \; || \
     find "build/libs/" -maxdepth 1 -name "*.jar" -exec mv {} /build/artifact.${EXTENSION} \; ; \
     fi
 
@@ -133,6 +127,8 @@ ARG BUILD_TOOL=gradle
 ARG BUILD_DIR=.
 
 WORKDIR /build/src
+
+COPY scripts/grails-repo-filter.gradle /opt/gradle-init/grails-repo-filter.gradle
 
 RUN echo "🔍 Cloning repository..." && \
     echo "   Repo: ${REPO}"
@@ -154,21 +150,13 @@ RUN --mount=type=cache,target=/root/.gradle \
     # Convert directory path to Gradle project path (e.g. server -> :server) \
     PROJECT_PATH=$(echo "${BUILD_DIR}" | sed 's/\//:/g') && \
     echo "🔨 Building project :${PROJECT_PATH} from root..." && \
-    if [ "${EXTENSION}" = "war" ]; then \
-    ./gradlew ":${PROJECT_PATH}:clean" ":${PROJECT_PATH}:war" -x test --no-daemon --max-workers=1; \
-    else \
-    ./gradlew ":${PROJECT_PATH}:clean" ":${PROJECT_PATH}:assemble" -x test --no-daemon --max-workers=1; \
-    fi && \
-    find "${BUILD_DIR}/build/libs/" -maxdepth 1 -name "*.${EXTENSION}" -exec mv {} /build/artifact.${EXTENSION} \; || \
+    ./gradlew ":${PROJECT_PATH}:clean" ":${PROJECT_PATH}:assemble" -x test --no-daemon --max-workers=1 --init-script /opt/gradle-init/grails-repo-filter.gradle && \
+    find "${BUILD_DIR}/build/libs/" -maxdepth 1 -name "*.${EXTENSION}" ! -name "*-plain.${EXTENSION}" -exec mv {} /build/artifact.${EXTENSION} \; || \
     find "${BUILD_DIR}/build/libs/" -maxdepth 1 -name "*.jar" -exec mv {} /build/artifact.${EXTENSION} \; ; \
     else \
     echo "🔨 Building from root..." && \
-    if [ "${EXTENSION}" = "war" ]; then \
-    ./gradlew clean war -x test --no-daemon --max-workers=1; \
-    else \
-    ./gradlew clean assemble -x test --no-daemon --max-workers=1; \
-    fi && \
-    find "build/libs/" -maxdepth 1 -name "*.${EXTENSION}" -exec mv {} /build/artifact.${EXTENSION} \; || \
+    ./gradlew clean assemble -x test --no-daemon --max-workers=1 --init-script /opt/gradle-init/grails-repo-filter.gradle && \
+    find "build/libs/" -maxdepth 1 -name "*.${EXTENSION}" ! -name "*-plain.${EXTENSION}" -exec mv {} /build/artifact.${EXTENSION} \; || \
     find "build/libs/" -maxdepth 1 -name "*.jar" -exec mv {} /build/artifact.${EXTENSION} \; ; \
     fi
 

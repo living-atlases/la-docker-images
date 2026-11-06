@@ -1,0 +1,36 @@
+// Gradle init script: keep ALA artifacts from being looked up on repo.grails.org.
+//
+// ALA's build.gradle files list repo.grails.org *before* the ALA nexus, so every
+// au.org.ala.* and org.grails.plugins:ala-* module (and every snapshot-metadata
+// check on them) is requested there first, where it does not exist. A 404 would
+// just fall through to the next repository, but repo.grails.org answers the burst
+// with 429, and Gradle then disables the repository and aborts the resolution
+// ("Repository maven is disabled due to earlier error").
+// Filtering the lookups removes the requests that could only ever 404.
+// grails/restricted is not queried at all: it is ahead of grails/core and the ALA
+// public group in every build.gradle, and everything these builds fetch (checked:
+// grails-mail, http-builder-helper, ala-*) is also served by those two, so it only
+// adds requests for the rate limit to count.
+// Passed with --init-script from the template: ~/.gradle is a BuildKit cache mount
+// there, so a file copied into it by the builder image would be hidden.
+
+def alaOnly = { repo ->
+    if (repo instanceof MavenArtifactRepository && repo.url?.host == 'repo.grails.org') {
+        repo.content {
+            if (repo.url.path.contains('/grails/restricted')) {
+                excludeGroupByRegex '.*'
+            } else {
+                excludeGroupByRegex 'au\\.org\\.ala(\\..*)?'
+                excludeModuleByRegex 'org\\.grails\\.plugins', 'ala-.*'
+            }
+        }
+    }
+}
+
+allprojects { p ->
+    p.repositories.all(alaOnly)
+    p.buildscript.repositories.all(alaOnly)
+}
+settingsEvaluated { s ->
+    s.pluginManagement.repositories.all(alaOnly)
+}

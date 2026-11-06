@@ -796,6 +796,13 @@ def build_service(service_name, service_config, dry_run=False, no_cache=False):
             os.path.join(scripts_dest, runtime_script),
         )
 
+    # Gradle init script the repo-branch/repo-commit stages pass with --init-script
+    # (keeps ALA artifacts off repo.grails.org, which answers the lookups with 429).
+    shutil.copy(
+        os.path.join(TEMPLATES_DIR, "scripts", "grails-repo-filter.gradle"),
+        os.path.join(scripts_dest, "grails-repo-filter.gradle"),
+    )
+
     # Copy settings.xml if it exists in templates, else create default
     src_settings = os.path.join(TEMPLATES_DIR, "settings.xml")
     dest_settings = os.path.join(build_path, "settings.xml")
