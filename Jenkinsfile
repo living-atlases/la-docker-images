@@ -14,6 +14,8 @@ pipeline {
         string(name: 'TAG', defaultValue: '', description: 'Version/Tag to build (leave empty for latest/develop)')
         string(name: 'LIST_TAGS', defaultValue: '', description: 'Build exactly these versions, comma-separated (e.g. 1.3,1.4,1.5). For backfilling old tags: N_TAGS can only take the N newest, so reaching an old version means rebuilding everything above it. Does not move `latest`.')
         string(name: 'BRANCH', defaultValue: '', description: 'Git branch for repo-branch builds (optional)')
+        string(name: 'BUILD_METHOD', defaultValue: '', description: 'Override the build method (nexus, repo-tags, repo-branch, url). Leave empty for the service default. repo-tags builds a version that exists as a git tag but was never published to Nexus (e.g. alerts 6.2.1); use it with TAG, which then does not move `latest`.')
+        string(name: 'JAVA_VERSION', defaultValue: '', description: 'Override the Java version (8, 11, 17, 21). Needed for repo-tags builds: dependencies.yaml only knows the Java of versions it lists.')
         booleanParam(name: 'PUSH', defaultValue: true, description: 'Push images to Docker Hub')
         booleanParam(name: 'DRY_RUN', defaultValue: false, description: 'Dry Run (generate Dockerfiles only)')
         booleanParam(name: 'FORCE_PULL', defaultValue: true, description: 'Pull base images')
@@ -86,6 +88,8 @@ pipeline {
                     if (params.TAG) args << "--tag=${params.TAG}"
                     if (params.LIST_TAGS) args << "--list-tags=${params.LIST_TAGS}"
                     if (params.BRANCH) args << "--branch=${params.BRANCH}"
+                    if (params.BUILD_METHOD) args << "--build-method=${params.BUILD_METHOD}"
+                    if (params.JAVA_VERSION) args << "--java-version=${params.JAVA_VERSION}"
                     if (params.DRY_RUN) args << "--dry-run"
                     if (params.FORCE_PULL) args << "--pull"
                     if (params.PUSH && !params.DRY_RUN) args << "--push"
